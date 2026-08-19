@@ -11,32 +11,44 @@ DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
 
 ## 效果
 
-- 长表（≥ 9 行含表头，或横向溢出超过 2px）上方出现右对齐的「⛶ 浮窗查看」按钮；
+- 长表（≥ 9 行含表头，或横向溢出超过 2px）表格下方出现右对齐的「⛶ 浮窗查看」按钮；
 - 短表不打扰；
 - 点击按钮弹出浮窗：标题显示「表格 · N 行 × M 列」，正文可独立滚动（横竖都行），
   关闭按钮 / Esc / 点击遮罩均可关闭，打开期间锁定聊天页滚动；
 - 浮窗头部「复制为 Markdown」按钮一键复制整表（单元格内联换行折叠、管道符转义）；
 - 浮窗里展示的是**原表格的克隆**，聊天里的表格保持不变，也不会被重复增强。
 
-## 安装（本机 profile 已装好）
+## 安装
 
-1. 把插件放到 `D:\dsh\plugins\dsh-plugin-table-zoom`（本仓库即此目录）；
-2. 在 profile 的 `package.json` 里加依赖与 bundle：
+本插件是纯客户端插件，需作为 bundle 挂载进 dsh 的 Web profile
+（与 dsh-notify / dsh-plugin-image-tools 同款机制）。
+
+1. 安装依赖（在 profile 目录，例如 `~/.dsh/profiles/web`）：
+
+   ```bash
+   npm install dsh-plugin-table-zoom
+   # 或从 GitHub 直装
+   npm install github:Pasumao/dsh-plugin-table-zoom
+   ```
+
+2. 在 profile 的 `package.json` 的 `dsh.profile.bundles` 里加入该插件：
 
    ```jsonc
-   // C:\Users\18303\.dsh\profiles\web\package.json
-   "dependencies": {
-     "dsh-plugin-table-zoom": "link:D:/dsh/plugins/dsh-plugin-table-zoom"
-   },
    "dsh": {
      "profile": {
-       "bundles": [ /* ... */, "dsh-plugin-table-zoom" ]
+       "bundles": [
+         /* ...已有的 bundle... */,
+         "dsh-plugin-table-zoom"
+       ]
      }
    }
    ```
 
-3. 在 profile 目录执行 `pnpm install`（已执行过）；
+3. 在 profile 目录执行 `pnpm install`（或 `npm install`）；
 4. **重启 `dsh web`**（launcher 重新拉起），新插件才会进入浏览器 bundle。
+
+> 若以本地目录开发调试，可用 `link:` 依赖替换第 1 步：
+> `"dsh-plugin-table-zoom": "link:D:/path/to/dsh-plugin-table-zoom"`。
 
 ## 工作原理
 

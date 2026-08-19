@@ -13,6 +13,7 @@
     "lib",
     "scripts",
     "cordis.patch.yml",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE",
     "设计说明.md"
