@@ -1,0 +1,63 @@
+{
+  "name": "dsh-plugin-table-zoom",
+  "description": "DSH 聊天表格浮窗插件：聊天里 markdown 表格太长（行多/超宽）看不完时，表格上方自动出现「浮窗查看」按钮，点击弹出可滚动的小浮窗完整显示表格，并支持一键复制为 Markdown。纯前端 DOM 增强，不改核心包、不注册工具、无服务端逻辑。",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "设计说明.md"
+  ],
+  "scripts": {
+    "selfcheck": "node scripts/selfcheck.mjs",
+    "smoke": "node scripts/selfcheck.mjs && node scripts/smoke-client.mjs",
+    "pack": "npm pack",
+    "prepublishOnly": "npm run smoke"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "harness",
+    "cordis",
+    "plugin",
+    "table",
+    "markdown",
+    "popup",
+    "zoom",
+    "float"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pasumao/dsh-plugin-table-zoom.git"
+  },
+  "homepage": "https://github.com/Pasumao/dsh-plugin-table-zoom#readme",
+  "bugs": {
+    "url": "https://github.com/Pasumao/dsh-plugin-table-zoom/issues"
+  },
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  }
+}

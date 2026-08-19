@@ -1,0 +1,69 @@
+# dsh-plugin-table-zoom
+
+DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
+
+聊天里模型输出的 markdown 表格经常**很长（行数多）或很宽（横向溢出）**，
+在对话流里一次看不完：要上下滚动聊天、左右拖动才能看完。本插件在长表上方
+自动注入一个小按钮「⛶ 浮窗查看」，点击后弹出**独立可滚动的小浮窗**完整显示
+表格，并支持**一键复制为 Markdown**。
+
+纯前端 DOM 增强：不改核心包、不注册工具、无服务端逻辑、零运行时依赖。
+
+## 效果
+
+- 长表（≥ 9 行含表头，或横向溢出超过 2px）上方出现右对齐的「⛶ 浮窗查看」按钮；
+- 短表不打扰；
+- 点击按钮弹出浮窗：标题显示「表格 · N 行 × M 列」，正文可独立滚动（横竖都行），
+  关闭按钮 / Esc / 点击遮罩均可关闭，打开期间锁定聊天页滚动；
+- 浮窗头部「复制为 Markdown」按钮一键复制整表（单元格内联换行折叠、管道符转义）；
+- 浮窗里展示的是**原表格的克隆**，聊天里的表格保持不变，也不会被重复增强。
+
+## 安装（本机 profile 已装好）
+
+1. 把插件放到 `D:\dsh\plugins\dsh-plugin-table-zoom`（本仓库即此目录）；
+2. 在 profile 的 `package.json` 里加依赖与 bundle：
+
+   ```jsonc
+   // C:\Users\18303\.dsh\profiles\web\package.json
+   "dependencies": {
+     "dsh-plugin-table-zoom": "link:D:/dsh/plugins/dsh-plugin-table-zoom"
+   },
+   "dsh": {
+     "profile": {
+       "bundles": [ /* ... */, "dsh-plugin-table-zoom" ]
+     }
+   }
+   ```
+
+3. 在 profile 目录执行 `pnpm install`（已执行过）；
+4. **重启 `dsh web`**（launcher 重新拉起），新插件才会进入浏览器 bundle。
+
+## 工作原理
+
+- 服务端半边（`lib/index.js`）：空实现。插件以「自带 bundle patch」方式挂载进
+  profile，客户端半边由 `dsh.client` 声明经 `/plugins/dsh-plugin-table-zoom/client.js`
+  送达浏览器（与 dsh-notify / dsh-plugin-image-tools 同款机制）。
+- 客户端半边（`lib/client.js`）：MutationObserver 观察 `document.body`，
+  rAF 合帧扫描 markdown 表格（核心渲染器把表格包在类名含 `tableScroll` 的
+  容器里），对长表在容器后注入按钮行；按钮点击后命令式创建浮窗（复用
+  image-tools 的 lightbox 模式：纯 DOM 单节点变更，不插入/移除 React 管理的
+  结构，重渲染时安全）。
+
+## 开发
+
+```sh
+npm run selfcheck    # 纯函数离线测试（识别/长表判定/Markdown 序列化）
+npm run smoke        # selfcheck + 假 DOM 端到端冒烟（按钮注入/浮窗开合/复制）
+npm run pack         # 打包
+```
+
+## 兼容性
+
+- 目标：DeepSeek Harness Web GUI（dsh web），皮肤与主题 CSS 变量自适应；
+- 依赖浏览器 `MutationObserver` / `requestAnimationFrame`，无 DOM 环境自动禁用；
+- 不影响其他插件：只认 `tableScroll` 容器内的表格，跳过浮窗与 image-tools
+  lightbox 内的表格。
+
+## License
+
+MIT
