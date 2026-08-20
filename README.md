@@ -1,5 +1,9 @@
 # dsh-plugin-table-zoom
 
+![npm version](https://img.shields.io/npm/v/dsh-plugin-table-zoom)
+![License](https://img.shields.io/github/license/Pasumao/dsh-plugin-table-zoom)
+![AI Assisted](https://img.shields.io/badge/AI-Assisted-8A2BE2)
+
 DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
 
 聊天里模型输出的 markdown 表格经常**很长（行数多）或很宽（横向溢出）**，
@@ -9,7 +13,7 @@ DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
 
 纯前端 DOM 增强：不改核心包、不注册工具、无服务端逻辑、零运行时依赖。
 
-## 效果
+## 功能
 
 - 长表（≥ 9 行含表头，或横向溢出超过 2px）表格下方出现右对齐的「⛶ 浮窗查看」按钮；
 - 短表不打扰；
@@ -17,6 +21,14 @@ DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
   关闭按钮 / Esc / 点击遮罩均可关闭，打开期间锁定聊天页滚动；
 - 浮窗头部「复制为 Markdown」按钮一键复制整表（单元格内联换行折叠、管道符转义）；
 - 浮窗里展示的是**原表格的克隆**，聊天里的表格保持不变，也不会被重复增强。
+
+## 配置
+
+无需任何配置，安装即用：
+
+- 不读取环境变量，不需要 API Key / token，不写配置文件；
+- 长表判定阈值（≥ 9 行 / 横向溢出 2px）为内置默认值，无需调整；
+- 样式跟随 DSH 主题 CSS 变量自适应，不引入独立主题配置。
 
 ## 安装
 
@@ -47,6 +59,15 @@ DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
 3. 在 profile 目录执行 `pnpm install`（或 `npm install`）；
 4. **重启 `dsh web`**（launcher 重新拉起），新插件才会进入浏览器 bundle。
 
+源码安装（本地开发 / 调试）：
+
+```bash
+git clone https://github.com/Pasumao/dsh-plugin-table-zoom.git
+cd dsh-plugin-table-zoom
+npm install
+# 以 link: 依赖挂载进 profile，见下方说明
+```
+
 > 若以本地目录开发调试，可用 `link:` 依赖替换第 1 步：
 > `"dsh-plugin-table-zoom": "link:D:/path/to/dsh-plugin-table-zoom"`。
 
@@ -75,6 +96,11 @@ npm run pack         # 打包
 - 依赖浏览器 `MutationObserver` / `requestAnimationFrame`，无 DOM 环境自动禁用；
 - 不影响其他插件：只认 `tableScroll` 容器内的表格，跳过浮窗与 image-tools
   lightbox 内的表格。
+
+## AI 生成声明
+
+代码与文档由 AI 辅助生成（DeepSeek Harness），均经人工审查与实机验证
+（`npm run smoke`：selfcheck + 假 DOM 端到端冒烟）。
 
 ## License
 
