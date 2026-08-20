@@ -6,7 +6,10 @@
  *   2. upgradeTable 在长表容器后注入「浮窗查看」按钮行，短表不注入；
  *   3. openPopup 创建浮窗（标题含行列数、表格克隆、关闭按钮），
  *      closePopup 关闭并还原 body 滚动；
- *   4. 表格克隆在浮窗内不会被再次增强（跳过 .dstz-popup）。
+ *   4. 表格克隆在浮窗内不会被再次增强（跳过 .dstz-popup）；
+ *   5. 右下角改尺寸手柄可拖拽改面板大小并记忆到 localStorage，
+ *      再次打开复用记忆布局；内容溢出时正文可拖拽平移；
+ *      标题栏可拖拽移动浮窗（不越出视口）；Ctrl+滚轮缩放表格字体。
  *
  * 运行：node scripts/smoke-client.mjs
  */
@@ -249,6 +252,138 @@ ok('closePopup 关闭浮窗并还原滚动', () => {
 ok('copyText 写入剪贴板', async () => {
   await mod.copyText('| a |\n| --- |')
   assert.equal(globalThis.__copied, '| a |\n| --- |')
+})
+
+// 5) 浮窗改尺寸 + 尺寸记忆 + 拖拽平移
+// 假 localStorage：验证尺寸记忆读写（真实环境缺失时各函数均已兜底）
+const sizeStore = new Map()
+Object.defineProperty(globalThis, 'localStorage', {
+  value: {
+    getItem: (k) => (sizeStore.has(k) ? sizeStore.get(k) : null),
+    setItem: (k, v) => { sizeStore.set(k, String(v)) },
+    removeItem: (k) => { sizeStore.delete(k) },
+  },
+  configurable: true,
+})
+
+ok('openPopup 挂载右下角改尺寸手柄并可拖拽', () => {
+  mod.closePopup()
+  const table = makeEl('table')
+  table.rows = []
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const panel = popup.children[0]
+  const handle = panel.children.find((c) => c.className === 'dstz-resizeSE')
+  assert.ok(handle !== undefined, 'resize handle not mounted')
+  panel.getBoundingClientRect = () => ({
+    width: parseInt(panel.style.width, 10) || 800,
+    height: parseInt(panel.style.height, 10) || 400,
+  })
+  handle.dispatch('pointerdown', { button: 0, clientX: 100, clientY: 100, pointerId: 1 })
+  handle.dispatch('pointermove', { clientX: 260, clientY: 160 })
+  assert.equal(panel.style.width, '960px')
+  assert.equal(panel.style.height, '460px')
+  assert.equal(panel.style.maxHeight, 'none')
+  assert.ok(popup._suppressClick === true, 'drag should suppress overlay close')
+  handle.dispatch('pointerup', {})
+  const saved = JSON.parse(sizeStore.get('dsh-plugin-table-zoom:popup-size'))
+  assert.equal(saved.w, 960)
+  assert.equal(saved.h, 460)
+  assert.ok(popup._suppressClick === false, 'suppress flag reset after drag')
+  mod.closePopup()
+})
+
+ok('applySavedLayout 复用上次记忆的布局', () => {
+  mod.closePopup()
+  const table = makeEl('table')
+  table.rows = []
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const panel = popup.children[0]
+  const clone = panel.children[1].children[0]
+  assert.equal(panel.style.width, '960px')
+  assert.equal(panel.style.height, '460px')
+  assert.equal(panel.style.maxHeight, 'none')
+  assert.equal(panel.style.left, '0px')
+  assert.equal(panel.style.top, '0px')
+  assert.equal(clone.style.zoom, '1')
+  mod.closePopup()
+})
+
+ok('溢出时正文可拖拽平移', () => {
+  mod.closePopup()
+  const table = makeEl('table')
+  table.rows = []
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const body = popup.children[0].children[1]
+  body.scrollWidth = 1200
+  body.clientWidth = 600
+  body.scrollHeight = 400
+  body.clientHeight = 300
+  body.scrollLeft = 300
+  body.scrollTop = 100
+  mod.refreshGrabbable(body)
+  assert.ok(body.classList.contains('dstz-grabbable'), 'overflow should show grab cursor')
+  body.dispatch('pointerdown', { button: 0, clientX: 10, clientY: 10, pointerId: 1 })
+  body.dispatch('pointermove', { clientX: 110, clientY: 60 })
+  assert.ok(body.classList.contains('dstz-panning'), 'panning class while dragging')
+  assert.equal(body.scrollLeft, 200)
+  assert.equal(body.scrollTop, 50)
+  assert.ok(popup._suppressClick === true, 'pan should suppress overlay close')
+  body.dispatch('pointerup', {})
+  assert.ok(!body.classList.contains('dstz-panning'), 'panning class cleared on release')
+  assert.ok(popup._suppressClick === false, 'suppress flag reset after pan')
+  mod.closePopup()
+})
+
+ok('标题栏可拖拽移动浮窗（不越出视口）', () => {
+  mod.closePopup()
+  sizeStore.delete('dsh-plugin-table-zoom:popup-size') // 清掉记忆，用默认尺寸测移动
+  const table = makeEl('table')
+  table.rows = []
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const panel = popup.children[0]
+  const header = panel.children[0]
+  panel.getBoundingClientRect = () => ({
+    width: parseInt(panel.style.width, 10) || 800,
+    height: parseInt(panel.style.height, 10) || 400,
+    left: parseInt(panel.style.left, 10) || 300,
+    top: parseInt(panel.style.top, 10) || 200,
+  })
+  const startLeft = parseInt(panel.style.left, 10)
+  const startTop = parseInt(panel.style.top, 10)
+  header.dispatch('pointerdown', { button: 0, clientX: 10, clientY: 10, pointerId: 1 })
+  header.dispatch('pointermove', { clientX: 50, clientY: 30 })
+  assert.ok(header.classList.contains('dstz-dragging'), 'dragging class while moving')
+  assert.equal(parseInt(panel.style.left, 10), startLeft + 40, 'left follows drag delta')
+  assert.equal(parseInt(panel.style.top, 10), startTop + 20, 'top follows drag delta')
+  assert.ok(popup._suppressClick === true, 'move should suppress overlay close')
+  header.dispatch('pointerup', {})
+  assert.ok(!header.classList.contains('dstz-dragging'), 'dragging class cleared on release')
+  assert.ok(popup._suppressClick === false, 'suppress flag reset after move')
+  mod.closePopup()
+})
+
+ok('Ctrl+滚轮缩放表格字体', () => {
+  mod.closePopup()
+  const table = makeEl('table')
+  table.rows = [{ cells: [] }, { cells: [] }]
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const panel = popup.children[0]
+  const clone = panel.children[1].children[0]
+  const small = panel.children[0].children[0].children[0]
+  assert.equal(clone.style.zoom, '1')
+  assert.ok(!small.textContent.includes('%'), 'zoom 1 时不显示百分比')
+  panel.dispatch('wheel', { ctrlKey: true, deltaY: -100 })
+  assert.equal(clone.style.zoom, '1.1')
+  assert.ok(small.textContent.includes('110%'), '标题显示缩放百分比')
+  panel.dispatch('wheel', { ctrlKey: true, deltaY: 100 })
+  assert.equal(clone.style.zoom, '1')
+  assert.ok(!small.textContent.includes('%'), '回到 100% 后百分比消失')
+  mod.closePopup()
 })
 
 console.log(`[dsh-plugin-table-zoom] smoke-client: ${passed} passed`)
