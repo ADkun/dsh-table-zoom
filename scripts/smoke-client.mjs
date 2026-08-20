@@ -7,9 +7,9 @@
  *   3. openPopup 创建浮窗（标题含行列数、表格克隆、关闭按钮），
  *      closePopup 关闭并还原 body 滚动；
  *   4. 表格克隆在浮窗内不会被再次增强（跳过 .dstz-popup）；
- *   5. 右下角改尺寸手柄可拖拽改面板大小并记忆到 localStorage，
- *      再次打开复用记忆布局；内容溢出时正文可拖拽平移；
- *      标题栏可拖拽移动浮窗（不越出视口）；Ctrl+滚轮缩放表格字体。
+ *   5. 右下角改尺寸手柄可拖拽改面板大小；内容溢出时正文可拖拽平移；
+ *      标题栏可拖拽移动浮窗（不越出视口）；Ctrl+滚轮缩放表格字体；
+ *      每次打开都按内容自适应宽度并居中（不继承上次的尺寸/位置/缩放）。
  *
  * 运行：node scripts/smoke-client.mjs
  */
@@ -254,17 +254,7 @@ ok('copyText 写入剪贴板', async () => {
   assert.equal(globalThis.__copied, '| a |\n| --- |')
 })
 
-// 5) 浮窗改尺寸 + 尺寸记忆 + 拖拽平移
-// 假 localStorage：验证尺寸记忆读写（真实环境缺失时各函数均已兜底）
-const sizeStore = new Map()
-Object.defineProperty(globalThis, 'localStorage', {
-  value: {
-    getItem: (k) => (sizeStore.has(k) ? sizeStore.get(k) : null),
-    setItem: (k, v) => { sizeStore.set(k, String(v)) },
-    removeItem: (k) => { sizeStore.delete(k) },
-  },
-  configurable: true,
-})
+// 5) 浮窗改尺寸 + 自适应 + 拖拽平移（无布局记忆：每次打开都自适应并居中）
 
 ok('openPopup 挂载右下角改尺寸手柄并可拖拽', () => {
   mod.closePopup()
@@ -275,6 +265,9 @@ ok('openPopup 挂载右下角改尺寸手柄并可拖拽', () => {
   const panel = popup.children[0]
   const handle = panel.children.find((c) => c.className === 'dstz-resizeSE')
   assert.ok(handle !== undefined, 'resize handle not mounted')
+  // 假 DOM 无真实布局：显式给一个起始尺寸，验证拖拽按 delta 改大小
+  panel.style.width = '800px'
+  panel.style.height = '400px'
   panel.getBoundingClientRect = () => ({
     width: parseInt(panel.style.width, 10) || 800,
     height: parseInt(panel.style.height, 10) || 400,
@@ -286,27 +279,28 @@ ok('openPopup 挂载右下角改尺寸手柄并可拖拽', () => {
   assert.equal(panel.style.maxHeight, 'none')
   assert.ok(popup._suppressClick === true, 'drag should suppress overlay close')
   handle.dispatch('pointerup', {})
-  const saved = JSON.parse(sizeStore.get('dsh-plugin-table-zoom:popup-size'))
-  assert.equal(saved.w, 960)
-  assert.equal(saved.h, 460)
   assert.ok(popup._suppressClick === false, 'suppress flag reset after drag')
   mod.closePopup()
 })
 
-ok('applySavedLayout 复用上次记忆的布局', () => {
+ok('每次打开不继承上次尺寸，始终按内容自适应', () => {
   mod.closePopup()
   const table = makeEl('table')
   table.rows = []
   mod.openPopup(table)
-  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
-  const panel = popup.children[0]
-  const clone = panel.children[1].children[0]
-  assert.equal(panel.style.width, '960px')
-  assert.equal(panel.style.height, '460px')
-  assert.equal(panel.style.maxHeight, 'none')
-  assert.equal(panel.style.left, '0px')
-  assert.equal(panel.style.top, '0px')
-  assert.equal(clone.style.zoom, '1')
+  let popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  let panel = popup.children[0]
+  assert.equal(panel.style.width, '320px', '首次打开走自适应（假 DOM 无布局 → 下限 320）')
+  // 模拟当次手动改大
+  panel.style.width = '800px'
+  panel.style.height = '500px'
+  mod.closePopup()
+  // 重新打开：应回到自适应宽度，而不是继承 800px
+  mod.openPopup(table)
+  popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  panel = popup.children[0]
+  assert.equal(panel.style.width, '320px', '再次打开仍自适应，不继承上次尺寸')
+  assert.notEqual(panel.style.height, '500px')
   mod.closePopup()
 })
 
@@ -339,13 +333,16 @@ ok('溢出时正文可拖拽平移', () => {
 
 ok('标题栏可拖拽移动浮窗（不越出视口）', () => {
   mod.closePopup()
-  sizeStore.delete('dsh-plugin-table-zoom:popup-size') // 清掉记忆，用默认尺寸测移动
   const table = makeEl('table')
   table.rows = []
   mod.openPopup(table)
   const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
   const panel = popup.children[0]
   const header = panel.children[0]
+  assert.equal(panel.style.width, '320px', '打开即自适应（假 DOM 无布局 → 下限 320）')
+  // 假 DOM 无真实布局：显式给起始位置，验证拖拽按 delta 移动
+  panel.style.left = '160px'
+  panel.style.top = '40px'
   panel.getBoundingClientRect = () => ({
     width: parseInt(panel.style.width, 10) || 800,
     height: parseInt(panel.style.height, 10) || 400,
@@ -384,6 +381,21 @@ ok('Ctrl+滚轮缩放表格字体', () => {
   assert.equal(clone.style.zoom, '1')
   assert.ok(!small.textContent.includes('%'), '回到 100% 后百分比消失')
   mod.closePopup()
+})
+
+ok('applyAdaptiveWidth 按表格自然宽度自适应（窄表收缩、宽表铺满视口）', () => {
+  const panel = makeEl('div')
+  const clone = makeEl('table')
+  clone.offsetWidth = 500
+  mod.applyAdaptiveWidth(panel, clone)
+  assert.equal(panel.style.width, '538px')
+  // 超级大表：铺满视口可用宽度（假 DOM 视口 1280 - 留白 48 = 1232）
+  clone.offsetWidth = 3000
+  mod.applyAdaptiveWidth(panel, clone)
+  assert.equal(panel.style.width, '1232px')
+  clone.offsetWidth = 0
+  mod.applyAdaptiveWidth(panel, clone)
+  assert.equal(panel.style.width, '320px')
 })
 
 console.log(`[dsh-plugin-table-zoom] smoke-client: ${passed} passed`)
