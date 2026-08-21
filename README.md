@@ -29,8 +29,10 @@ DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
   位置只影响当次打开；
 - **Ctrl+滚轮缩放**：浮窗内按住 Ctrl 滚动滚轮，表格字体 60%–250% 缩放
   （步进 10%），标题栏实时显示百分比；**缩放不记忆，每次打开回到 100%**；
-- **拖拽平移**：表格超宽/超高时，按住正文任意位置即可左右/上下拖动滚动
-  （grab 光标提示；越过 4px 阈值才视为拖动，不干扰文本选择；触屏走原生滚动）；
+- **框选文字**：普通左键在表格（含放大后）里拖动即可框选文字，
+  不会被平移劫持；
+- **按住空格拖拽平移**：表格超宽/超高时，按住空格再按住正文拖动即可
+  左右/上下滚动（grab 光标仅在按住空格时出现；触屏走原生滚动）；
 - **滚动条清晰**：正文滚动条加深加粗，浅色主题下也能看清；
 - **列宽适配**：列宽上限与聊天内一致（`min(30vw, 320px)`），超宽列自动换行收缩，
   表格整体不再撑破浮窗。
@@ -109,6 +111,20 @@ npm run pack         # 打包
 - 依赖浏览器 `MutationObserver` / `requestAnimationFrame`，无 DOM 环境自动禁用；
 - 不影响其他插件：只认 `tableScroll` 容器内的表格，跳过浮窗与 image-tools
   lightbox 内的表格。
+
+## 相关插件
+
+本插件属于 **Pasumao 的 dsh 插件生态**，同系列已发布插件可搭配使用：
+
+| 插件（npm） | GitHub | 说明 |
+|---|---|---|
+| [dsh-notify](https://www.npmjs.com/package/dsh-notify) | [GitHub 仓库](https://github.com/Pasumao/dsh-plugin-notify) | Windows 原生通知 + 系统托盘 |
+| [dsh-plugin-choice-refresh](https://www.npmjs.com/package/dsh-plugin-choice-refresh) | [GitHub 仓库](https://github.com/Pasumao/dsh-plugin-choice-refresh) | 选择增强：重新生成选项 / 更多选项 |
+| [dsh-plugin-dev-kb](https://www.npmjs.com/package/dsh-plugin-dev-kb) | [GitHub 仓库](https://github.com/Pasumao/dsh-plugin-dev-kb) | 插件开发知识库（官方文档完整镜像 + 技能） |
+| [dsh-plugin-image-tools](https://www.npmjs.com/package/dsh-plugin-image-tools) | [GitHub 仓库](https://github.com/Pasumao/dsh-plugin-image-tools) | 图片选择卡 + 回复内嵌图片 + 盲模型收图 |
+| [dsh-plugin-workbench](https://www.npmjs.com/package/dsh-plugin-workbench) | [GitHub 仓库](https://github.com/Pasumao/dsh-plugin-workbench) | VS Code 风格文件浏览器 + 可编辑预览 |
+
+> 本系列其余插件见 [Pasumao · dsh 插件](https://github.com/Pasumao)；觉得好用欢迎到 GitHub 点 ⭐。
 
 ## AI 生成声明
 

@@ -7,8 +7,9 @@
  *   3. openPopup 创建浮窗（标题含行列数、表格克隆、关闭按钮），
  *      closePopup 关闭并还原 body 滚动；
  *   4. 表格克隆在浮窗内不会被再次增强（跳过 .dstz-popup）；
- *   5. 右下角改尺寸手柄可拖拽改面板大小；内容溢出时正文可拖拽平移；
- *      标题栏可拖拽移动浮窗（不越出视口）；Ctrl+滚轮缩放表格字体；
+ *   5. 右下角改尺寸手柄可拖拽改面板大小；溢出时左键拖动保留原生文本
+ *      选择（不启动平移），按住空格拖动才平移；标题栏可拖拽移动浮窗
+ *      （不越出视口）；Ctrl+滚轮缩放表格字体；
  *      每次打开都按内容自适应宽度并居中（不继承上次的尺寸/位置/缩放）。
  *
  * 运行：node scripts/smoke-client.mjs
@@ -132,7 +133,22 @@ const documentEl = {
   removeEventListener() {},
 }
 globalThis.document = documentEl
-globalThis.window = { setTimeout: (fn) => fn() }
+globalThis.window = {
+  setTimeout: (fn) => fn(),
+  _listeners: {},
+  addEventListener(type, fn) { (this._listeners[type] ??= []).push(fn) },
+  removeEventListener(type, fn) {
+    const arr = this._listeners[type]
+    if (!arr) return
+    const idx = arr.indexOf(fn)
+    if (idx >= 0) arr.splice(idx, 1)
+  },
+  dispatch(type, event = {}) {
+    const arr = this._listeners[type]
+    if (!arr) return
+    for (const fn of [...arr]) fn({ target: documentEl, stopPropagation() {}, ...event })
+  },
+}
 Object.defineProperty(globalThis, 'navigator', {
   value: { clipboard: { writeText: async (t) => { globalThis.__copied = t } } },
   configurable: true,
@@ -304,7 +320,7 @@ ok('每次打开不继承上次尺寸，始终按内容自适应', () => {
   mod.closePopup()
 })
 
-ok('溢出时正文可拖拽平移', () => {
+ok('溢出时左键拖动不启动平移（保留原生文本选择）', () => {
   mod.closePopup()
   const table = makeEl('table')
   table.rows = []
@@ -318,16 +334,46 @@ ok('溢出时正文可拖拽平移', () => {
   body.scrollLeft = 300
   body.scrollTop = 100
   mod.refreshGrabbable(body)
-  assert.ok(body.classList.contains('dstz-grabbable'), 'overflow should show grab cursor')
+  assert.ok(!body.classList.contains('dstz-grabbable'), '未按空格时不应显示 grab 光标')
+  // 未按空格：左键拖动不进入平移，也不吞掉遮罩点击（让给浏览器原生框选文字）
   body.dispatch('pointerdown', { button: 0, clientX: 10, clientY: 10, pointerId: 1 })
   body.dispatch('pointermove', { clientX: 110, clientY: 60 })
-  assert.ok(body.classList.contains('dstz-panning'), 'panning class while dragging')
+  assert.ok(!body.classList.contains('dstz-panning'), '未按空格拖动不应进入平移')
+  assert.equal(body.scrollLeft, 300)
+  assert.equal(body.scrollTop, 100)
+  assert.ok(popup._suppressClick !== true, '未按空格拖动不应吞掉遮罩点击')
+  body.dispatch('pointerup', {})
+  mod.closePopup()
+})
+
+ok('按住空格拖动可平移溢出内容，光标随空格状态切换', () => {
+  mod.closePopup()
+  const table = makeEl('table')
+  table.rows = []
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const body = popup.children[0].children[1]
+  body.scrollWidth = 1200
+  body.clientWidth = 600
+  body.scrollHeight = 400
+  body.clientHeight = 300
+  body.scrollLeft = 300
+  body.scrollTop = 100
+  // 按住空格：内容溢出时出现 grab 光标
+  globalThis.window.dispatch('keydown', { key: ' ', code: 'Space' })
+  assert.ok(body.classList.contains('dstz-grabbable'), '按住空格且溢出时应显示 grab 光标')
+  body.dispatch('pointerdown', { button: 0, clientX: 10, clientY: 10, pointerId: 1 })
+  body.dispatch('pointermove', { clientX: 110, clientY: 60 })
+  assert.ok(body.classList.contains('dstz-panning'), '按住空格拖动应进入平移')
   assert.equal(body.scrollLeft, 200)
   assert.equal(body.scrollTop, 50)
-  assert.ok(popup._suppressClick === true, 'pan should suppress overlay close')
+  assert.ok(popup._suppressClick === true, '平移应吞掉遮罩关闭')
   body.dispatch('pointerup', {})
-  assert.ok(!body.classList.contains('dstz-panning'), 'panning class cleared on release')
-  assert.ok(popup._suppressClick === false, 'suppress flag reset after pan')
+  assert.ok(!body.classList.contains('dstz-panning'), '松手后退出平移')
+  assert.ok(popup._suppressClick === false, '平移结束恢复遮罩点击')
+  // 松开空格：grab 光标消失
+  globalThis.window.dispatch('keyup', { key: ' ', code: 'Space' })
+  assert.ok(!body.classList.contains('dstz-grabbable'), '松开空格后 grab 光标消失')
   mod.closePopup()
 })
 
