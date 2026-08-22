@@ -110,7 +110,12 @@ npm run pack         # 打包
 - 目标：DeepSeek Harness Web GUI（dsh web），皮肤与主题 CSS 变量自适应；
 - 依赖浏览器 `MutationObserver` / `requestAnimationFrame`，无 DOM 环境自动禁用；
 - 不影响其他插件：只认 `tableScroll` 容器内的表格，跳过浮窗与 image-tools
-  lightbox 内的表格。
+  lightbox 内的表格；
+- **dsh `0.1.1-rc.2` 起核心渲染器为 4+ 列宽表新增 `md-table-wide` 分支**
+  （宽度扩展到聊天内容列两侧留白，默认 `overflow-x:hidden`、仅 hover 才出
+  滚动条）。插件注入一条覆盖规则把宽表拉回内容列宽度并常驻横向滚动条，
+  恢复旧版「超宽在会话列内滚动查看」体验；旧版 dsh 无 `md-table-wide`
+  类，规则不命中，行为不变。
 
 ## 相关插件
 

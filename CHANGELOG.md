@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.3] - 2026-08-22
+
+- **修复：dsh `0.1.1-rc.2` 兼容——宽表「超出会话显示、无滚动条」**。rc2 起
+  核心渲染器给 4+ 列宽表新增 `md-table-wide` 分支：宽表宽度扩展到聊天
+  内容列两侧留白（`AssistantMarkdown.module.css` 的
+  `width/margin-left/padding-left` 联动），且默认 `overflow-x:hidden`
+  （仅 hover / focus-visible 才显示横向滚动条）。插件注入一条覆盖规则
+  （`[class*="tableScroll"].md-table-wide`）把宽表拉回内容列宽度并常驻
+  横向滚动条，恢复 `0.1.0-rc.8` 及以前「超宽在会话列内滚动查看」的行为；
+  旧版 dsh 无 `md-table-wide` 类，规则不命中，行为不变。
+- 测试：selfcheck 新增 1 项（client.js 样式数组必须包含 rc2 覆盖规则，
+  防止后续编辑误删），共 selfcheck 13 项 + 冒烟 13 项。
+
 ## [0.3.2] - 2026-08-22
 
 - README：新增「相关插件」互相引用段（列出同系列已发布插件，npm / GitHub 链接 + 一句话说明），互相引流。

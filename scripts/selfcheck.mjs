@@ -118,4 +118,12 @@ ok('tableToMarkdown 空表', () => {
   assert.equal(mod.tableToMarkdown(null), '')
 })
 
+// --- rc2 兼容：client.js 样式数组必须含宽表覆盖规则（防后续编辑误删） ---
+ok('client.js 样式数组含 rc2 宽表覆盖规则', () => {
+  assert.ok(
+    code.includes('[class*="tableScroll"].md-table-wide{box-sizing:border-box'),
+    'missing rc2 md-table-wide override rule in injected CSS',
+  )
+})
+
 console.log(`[dsh-plugin-table-zoom] selfcheck: ${passed} passed`)
