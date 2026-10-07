@@ -402,6 +402,29 @@ check('窄面板时面板自身不滚动、子元素与面板左边缘对齐（�
     panelScrollWidth: nf.panelScrollWidth, panelClientWidth: nf.panelClientWidth, headerScrollWidth: nf.headerScrollWidth,
     headerClientWidth: nf.headerClientWidth, narrowClass: nf.narrowClass, labelDisplay: nf.labelDisplay }))
 
+// 窄态按钮：只收文字、图标字形仍在、点击面积达标（复核方第三轮：旧写法用后代 `span`
+// 通配收起，把图标 ↕/↔ 和文字一起藏了 → 窄态两个按钮是 22×8 的空白方块，行列只能靠悬停区分）
+const nfBtns = nf.btnInfo ?? []
+const nfRow = nfBtns[0] ?? {}, nfCol = nfBtns[1] ?? {}
+const BTN_MIN_W = 28, BTN_MIN_H = 24
+check('窄态冻结按钮只收起文字、图标字形仍可见（图标 span display 非 none 且占位 > 0）',
+  nfBtns.length === 2
+  && nfRow.textDisplay === 'none' && nfRow.textOffsetW === 0
+  && nfCol.textDisplay === 'none' && nfCol.textOffsetW === 0
+  && nfRow.iconDisplay !== 'none' && nfRow.iconOffsetW > 0 && nfRow.iconW > 0
+  && nfCol.iconDisplay !== 'none' && nfCol.iconOffsetW > 0 && nfCol.iconW > 0
+  && nfRow.iconChar === '↕' && nfCol.iconChar === '↔',
+  JSON.stringify(nfBtns))
+check(`窄态冻结按钮的可见尺寸不小于 ${BTN_MIN_W}×${BTN_MIN_H}px（理由：WCAG 2.5.8「目标尺寸」下限为 24×24；旧实现把两个 span 全隐藏后只剩 22×8）`,
+  nfRow.btnW >= BTN_MIN_W && nfRow.btnH >= BTN_MIN_H && nfCol.btnW >= BTN_MIN_W && nfCol.btnH >= BTN_MIN_H,
+  JSON.stringify(nfBtns.map((b) => ({ label: b.label, w: b.btnW, h: b.btnH }))))
+check('窄态两个冻结按钮仍能区分行/列（aria-label 与 title 各指其行/列，且图标字形不同）',
+  typeof nfRow.label === 'string' && nfRow.label.includes('首行')
+  && typeof nfCol.label === 'string' && nfCol.label.includes('首列')
+  && nfRow.title === nfRow.label && nfCol.title === nfCol.label
+  && nfRow.iconChar !== nfCol.iconChar,
+  JSON.stringify(nfBtns.map((b) => ({ label: b.label, title: b.title, icon: b.iconChar }))))
+
 // ── 12.6) 宽度预算：表宽 + 38 + 正文纵向滚动条，内层容得下整表、左右内边距对称 ──
 const fb2 = probe.fitBudget ?? {}
 check('面板宽度预算把正文纵向滚动条算进去（否则表格会挤进右侧内边距：实测左 18px / 右 8px）',
@@ -413,6 +436,7 @@ check('内层内容盒容得下整表，表格左右内边距对称且没有无�
   JSON.stringify(fb2))
 notes.push(`  窄面板：panel ${nf.panelWidth}px（左 ${nf.panelLeft}）header 左 ${nf.headerLeft} 溢出 ${nf.headerScrollWidth}/${nf.headerClientWidth}`
   + ` 面板scrollLeft=${nf.panelScrollLeft} dstz-narrow=${nf.narrowClass} 按钮文字=${nf.labelDisplay}`)
+notes.push(`  窄态按钮：${nfBtns.map((b) => `${b.label} ${b.btnW}×${b.btnH}（图标 ${b.iconChar} ${b.iconDisplay} ${b.iconOffsetW}px，文字 ${b.textDisplay} ${b.textOffsetW}px）`).join(' | ')}`)
 notes.push(`  宽度预算：表 ${fb2.tableW} + 38 + 滚动条 ${fb2.scrollbarY} = 面板 ${fb2.panelW}（实际差 ${fb2.budget}）；`
   + `内层内容 ${fb2.innerContentW}，左右内边距实测 ${fb2.leftPadEffective}/${fb2.rightPadEffective}（声明 ${fb2.innerPadLeft}/${fb2.innerPadRight}），横向滚动条 ${fb2.maxScrollLeft}`)
 

@@ -489,7 +489,20 @@
       mod.closePopup()
       mod.openPopup(fx.build('normal', 30, 2))
       const p = q('.dstz-panel'); const h = q('.dstz-header'); const act = q('.dstz-headerActions')
-      const span = p ? p.querySelector('.dstz-freezeBtn span') : null
+      // 按钮逐个读数：窄态「只收文字、图标仍在」是判据（复核方第三轮：旧写法用
+      // 后代 `span` 通配，把图标 ↕/↔ 与文字一起藏了 → 22×8 的空白方块）
+      const btns = p ? Array.prototype.slice.call(p.querySelectorAll('.dstz-freezeBtn')) : []
+      const btnInfo = btns.map((b) => {
+        const icon = b.querySelector('.dstz-freezeBtn-icon'), text = b.querySelector('.dstz-freezeBtn-text')
+        const br = rectOf(b), ir = icon ? rectOf(icon) : null
+        return {
+          label: b.getAttribute('aria-label'), title: b.getAttribute('title'), ariaPressed: b.getAttribute('aria-pressed'),
+          btnW: R(br.w), btnH: R(br.h),
+          iconChar: icon ? icon.textContent : null, iconDisplay: icon ? cs(icon).display : null,
+          iconW: ir ? R(ir.w) : null, iconH: ir ? R(ir.h) : null, iconOffsetW: icon ? icon.offsetWidth : null,
+          textDisplay: text ? cs(text).display : null, textOffsetW: text ? text.offsetWidth : null,
+        }
+      })
       const pr = rectOf(p), hr = rectOf(h)
       const res = {
         tableW: R(rectOf(q('.dstz-table')).w),
@@ -499,7 +512,8 @@
         headerScrollWidth: h ? h.scrollWidth : null, headerClientWidth: h ? h.clientWidth : null,
         actionsScrollWidth: act ? act.scrollWidth : null,
         narrowClass: p ? p.classList.contains('dstz-narrow') : null,
-        labelDisplay: span ? cs(span).display : null,
+        labelDisplay: btnInfo.length ? btnInfo[0].textDisplay : null,
+        btnInfo: btnInfo,
         activeElement: document.activeElement ? String(document.activeElement.className) : null,
       }
       mod.closePopup()

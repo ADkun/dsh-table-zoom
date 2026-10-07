@@ -150,10 +150,16 @@ ok('client.js 样式表含冻结首行/首列规则', () => {
   assert.ok(mod.CSS.includes('.dstz-inner{padding:14px 18px 18px}'), '内边距应落在内层 .dstz-inner')
   assert.ok(mod.CSS.includes('.dstz-inner{padding:10px 12px 12px}'), '720px 断点只改 .dstz-inner 内边距')
   assert.ok(!/width<=720px\)[^']*top:-/.test(mod.CSS), '断点里不应再补 sticky 偏移')
-  assert.ok(mod.CSS.includes('@media (width<=560px){.dstz-freezeBtn span{display:none}}'),
+  assert.ok(mod.CSS.includes('@media (width<=560px){.dstz-freezeBtn-text{display:none}'),
     '视口窄（媒体查询）时收起冻结按钮文字')
-  assert.ok(mod.CSS.includes('.dstz-panel.dstz-narrow .dstz-freezeBtn span{display:none}'),
+  assert.ok(mod.CSS.includes('.dstz-panel.dstz-narrow .dstz-freezeBtn-text{display:none}'),
     '面板自身窄时也要收起：头部横向溢出会把 overflow:hidden 的面板变成滚动容器，聚焦关闭按钮即整条头部与正文左移')
+  assert.ok(!/\.dstz-freezeBtn\s+span/.test(mod.CSS),
+    '不得用后代 `span` 通配收起按钮内容：会把图标 ↕/↔ 一起藏掉，窄态成了没有字形的空白方块（实测 22×8px）')
+  assert.ok(mod.CSS.includes('.dstz-freezeBtn-icon{display:inline-block'),
+    '图标 span 要有明确的类与盒子（窄态只留图标时才有可见字形与可点面积）')
+  assert.ok(mod.CSS.includes('.dstz-panel.dstz-narrow .dstz-freezeBtn{min-width:34px;min-height:26px'),
+    '窄态按钮要有最小点击面积（WCAG 2.5.8 目标尺寸下限 24×24）')
   assert.ok(mod.CSS.includes('--dstz-frozen-row-bg:color-mix(in srgb,var(--dsw-alias-label-primary'),
     '首行底色应为主题变量混合（两个输入都不透明 ⇒ alpha 恒为 1）')
   assert.ok(mod.CSS.includes('--dstz-frozen-col-bg:color-mix(in srgb,var(--dsw-alias-label-primary'),

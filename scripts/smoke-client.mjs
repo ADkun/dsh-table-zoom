@@ -563,6 +563,21 @@ ok('fitHeader：头部溢出就收起按钮文字，并把面板自身滚动偏�
 
 // 6) 冻结首行 / 冻结首列（默认开启、可独立切换、关闭后无残留）
 
+ok('冻结按钮的图标与文字是两个带类的 span（窄态只收文字、图标 ↕/↔ 留着）', () => {
+  const { panel } = openAndGet()
+  const iconOf = (key) => freezeBtnOf(panel, key).children.find((c) => c.className === 'dstz-freezeBtn-icon')
+  const textOf = (key) => freezeBtnOf(panel, key).children.find((c) => c.className === 'dstz-freezeBtn-text')
+  const icon = iconOf('row'), text = textOf('row')
+  assert.ok(icon !== undefined, '图标 span 要有自己的类 dstz-freezeBtn-icon（CSS 收文字时不能连图标一起藏）')
+  assert.ok(text !== undefined, '文字 span 要有自己的类 dstz-freezeBtn-text')
+  assert.equal(icon.textContent, '↕')
+  assert.equal(icon.getAttribute('aria-hidden'), 'true', '图标对读屏是装饰性内容')
+  assert.equal(text.textContent, mod.LABELS.freezeRow)
+  assert.equal(iconOf('col').textContent, '↔', '两个按钮图标字形不同 ⇒ 窄态只留图标也能区分行/列')
+  assert.equal(textOf('col').textContent, mod.LABELS.freezeCol)
+  mod.closePopup()
+})
+
 /** 造一个「有 thead」的表，供冻结断言使用。 */
 function makeHeadTable(rowCount = 10, colCount = 3) {
   const table = makeEl('table')

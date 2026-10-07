@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.5.3] - 2026-10-08
+
+第三方复核第三轮：窄态按钮把图标一起藏掉（中等缺陷，已修）+ 判据与元数据收口。
+
+**1）窄浮窗里「冻结首行/首列」按钮的图标不再被一起藏掉（真缺陷，已修）。** 0.5.2 为消掉
+头部横向溢出写的 `display:none` 用了后代 `span` 通配（`.dstz-freezeBtn span`），把图标
+`↕`/`↔` 和文字一起收起了 —— 复核方实测窄态两个按钮是 **22 × 8 px 的空白方块**，两个 span
+全 `display:none`（`offsetWidth` 为 0），行/列只能靠悬停提示区分，与代码注释、判据文案里
+写的「收起文字只留图标」不符。修法：图标与文字各带一个类（`.dstz-freezeBtn-icon` /
+`.dstz-freezeBtn-text`），两条 `display:none` 规则只命中文字；图标补明确盒子
+（`display:inline-block;min-width:1em;font-size:13px`），窄态再给按钮最小点击面积
+（`min-width:34px;min-height:26px`，依据 WCAG 2.5.8 目标尺寸下限 24×24）。真机（无头，
+视口 1478×888，表 200px / 2 列 × 30 行）实测窄态：两个按钮 **34 × 26 px**、图标
+`display:block` 13px（`offsetWidth` 13，字形 `↕` / `↔` 各自可见）、文字 `none`
+（`offsetWidth` 0），`aria-label`/`title` 仍分别指「冻结首行」「冻结首列」。
+
+**2）`smoke:geom` 补三条窄态断言，并已自证能抓住旧写法。** 新增：图标 span `display`
+非 `none` 且占位 > 0；按钮可见尺寸 ≥ 28 × 24（理由：WCAG 2.5.8 下限 24 × 24，旧实现只有
+22 × 8）；两个按钮的 `aria-label`/`title` 仍能区分行/列且图标字形不同。`selfcheck` 另加
+「不得出现 `.dstz-freezeBtn span` 通配」与「窄态按钮有最小点击面积」两条静态守卫，
+`smoke-client` 加一条「图标与文字是两个带类的 span、字形不同」。**自证（副本里做突变）**：
+把两条 `display:none` 规则改回旧写法 → `npm run smoke` exit 1（`selfcheck` 守卫命中）、
+`npm run smoke:geom` exit 1、**149 passed / 1 failed**（失败项正是「图标字形仍可见」，
+读数 `iconDisplay=none / iconOffsetW=0`）；再把两条 `min-width/min-height` 也去掉（复现
+复核方实测的旧实现）→ `npm run smoke:geom` exit 1、**148 passed / 2 failed**，读数
+**22 × 8**（与复核方实测一致）。即两条新判据各自都抓得住对应的旧写法。
+
+**3）元数据指回本仓库（fork）。** `package.json` 的 `repository` / `homepage` / `bugs`
+原先仍指向上游 `Pasumao/dsh-plugin-table-zoom`，而 origin 是 `ADkun/dsh-table-zoom`。本次
+改动只存在于本 fork（未向上游提 PR），代码与 issue 都该落在本 fork，故三项一并改为
+`ADkun/dsh-table-zoom`；上游仓库仍在 README 里注明。
+
+回归：`selfcheck` 19 项、`smoke-client` 24 项、`smoke:geom` **150 项全绿**（真实浏览器
+无头 + 夹具页读数值）。仍未在真实 DSH GUI 里目视确认（无头读数 + 夹具模拟主题变量）。
+
 ## [0.5.2] - 2026-10-08
 
 第三方复核第二轮（含对 `smoke:geom` 做的突变测试）提出的三点裁定 + 一条构造性期望加固。
