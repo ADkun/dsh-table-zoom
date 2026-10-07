@@ -504,13 +504,14 @@ ok('Ctrl+滚轮缩放表格字体', () => {
   const panel = popup.children[0]
   const clone = panel.querySelector('.dstz-body .dstz-table')
   const small = panel.children[0].children[0].children[0]
-  assert.equal(clone.style.zoom, '1')
+  // 100% 不写内联样式：刚打开的浮窗表格上 `style` 属性为空（不残留 zoom: 1）
+  assert.ok(!clone.style.zoom, 'zoom 100% 时不得写内联 style.zoom')
   assert.ok(!small.textContent.includes('%'), 'zoom 1 时不显示百分比')
   panel.dispatch('wheel', { ctrlKey: true, deltaY: -100 })
   assert.equal(clone.style.zoom, '1.1')
   assert.ok(small.textContent.includes('110%'), '标题显示缩放百分比')
   panel.dispatch('wheel', { ctrlKey: true, deltaY: 100 })
-  assert.equal(clone.style.zoom, '1')
+  assert.ok(!clone.style.zoom, '回到 100% 后清掉内联缩放声明（不留 style 残留）')
   assert.ok(!small.textContent.includes('%'), '回到 100% 后百分比消失')
   mod.closePopup()
 })
@@ -662,7 +663,9 @@ ok('冻结样式规则齐备：两向 sticky（偏移 0）、层次 z-index、�
   const css = mod.CSS
   // 两个方向都吸附，偏移一律 0（内边距在 .dstz-inner 上 ⇒ 与 padding/断点/zoom 全解耦）
   assert.ok(/\.dstz-table\.dstz-freeze-row tr\.dstz-freeze-top-row>\*\{position:sticky;top:0/.test(css), '首行 sticky top:0')
-  assert.ok(/\.dstz-table\.dstz-freeze-col tr>\*:first-child\{position:sticky;left:0;z-index:4/.test(css), '首列 sticky left:0、z-index:4')
+  assert.ok(/\.dstz-table\.dstz-freeze-col (thead|tbody)>tr>\*:first-child\{position:sticky;left:0;z-index:4/.test(css),
+    '首列 sticky left:0、z-index:4（分别写 thead/tbody 两条，不写裸 tr:first-child）')
+  assert.ok(!/dstz-freeze-col tr>\*:first-child/.test(css), '列冻结不得用裸 tr 选择器（会冻住 <tfoot> 首格）')
   assert.ok(!/position:sticky;(top|left):-/.test(css), '不得再写死负偏移（zoom≠1 时会错位）')
   const bodyRule = /\.dstz-body\{([^}]*)\}/.exec(css)
   assert.ok(bodyRule !== null && !bodyRule[1].includes('padding'), '滚动容器 .dstz-body 不得有内边距')
@@ -677,14 +680,14 @@ ok('冻结样式规则齐备：两向 sticky（偏移 0）、层次 z-index、�
   assert.ok(css.includes('--dstz-frozen-col-bg:color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 9%,var(--dsw-specific-input-major,#fff))'),
     '首列底色 = 9% 混入（与首行档不同色）')
   assert.ok(/dstz-freeze-top-row>\*\{[^}]*background:var\(--dstz-frozen-row-bg\)/.test(css), '吸附首行背景走主题变量')
-  assert.ok(/dstz-freeze-col tr>\*:first-child\{[^}]*background:var\(--dstz-frozen-col-bg\)/.test(css), '吸附首列背景走主题变量')
+  assert.ok(/dstz-freeze-col (thead|tbody)>tr>\*:first-child\{[^}]*background:var\(--dstz-frozen-col-bg\)/.test(css), '吸附首列背景走主题变量')
   assert.ok(/dstz-freeze-row\.dstz-freeze-col tr\.dstz-freeze-top-row>\*:first-child\{z-index:6;background:var\(--dstz-frozen-row-bg\)/.test(css),
     '交叉格取首行那一档底色，不叠第三色')
   assert.ok(!/dstz-freeze[^{]*\{[^}]*background:transparent/.test(css), '吸附单元格不得用透明背景')
   // box-shadow 画分隔线（border-collapse:collapse 下 sticky 单元格边框会消失）
   assert.ok(/dstz-freeze-top-row>\*\{[^}]*box-shadow:0 -8px 0 0 var\(--dstz-frozen-row-bg\),0 4px 0 -1px var\(--dsw-alias-border-l3\)/.test(css),
     '上溢遮罩 + 下边框分隔线（底色换档后仍然看得见）')
-  assert.ok(/dstz-freeze-col tr>\*:first-child\{[^}]*box-shadow:2px 0 0 -1px var\(--dsw-alias-border-l3\)/.test(css), '首列右侧分隔线')
+  assert.ok(/dstz-freeze-col (thead|tbody)>tr>\*:first-child\{[^}]*box-shadow:2px 0 0 -1px var\(--dsw-alias-border-l3\)/.test(css), '首列右侧分隔线')
   mod.closePopup()
 })
 
@@ -694,7 +697,7 @@ ok('无 thead 的表格（真实 DOM 里 tHead === null）：标记首行、不�
   const rows = []
   for (let r = 0; r < 3; r++) {
     const tr = makeEl('tr')
-    tr.cells = []
+    tr.cells = [{ textContent: '' }] // 真实 DOM 里 <tr> 的 cells 是活访问器，别写成空数组
     tr.appendChild(makeEl('td'))
     rows.push(tr)
     table.appendChild(tr)
@@ -742,6 +745,46 @@ ok('冻结按钮点击不会被标题栏拖拽劫持（按钮仍可达）', () =
   assert.equal(panel.style.left, startLeft, '按在按钮上拖动不应移动浮窗')
   assert.ok(!header.classList.contains('dstz-dragging'), '不应进入拖拽态')
   assert.equal(popup._suppressClick, undefined, '不应吞掉遮罩点击')
+  mod.closePopup()
+})
+
+ok('底色兜底：不支持 color-mix() 的浏览器落到不透明主题变量（@supports 只做覆盖）', () => {
+  const css = mod.CSS
+  const iSup = css.indexOf('@supports (color: color-mix(in srgb, red, blue))')
+  assert.ok(iSup > -1, '存在 @supports 特性检测')
+  for (const name of ['--dstz-frozen-row-bg', '--dstz-frozen-col-bg']) {
+    const iFallback = css.indexOf(name + ':var(--dsw-specific-input-major,#fff)')
+    assert.ok(iFallback > -1, name + ' 有兜底声明')
+    assert.ok(iFallback < iSup, name + ' 兜底声明必须写在 @supports 之前（借后出现顺序覆盖）')
+    const iMix = css.indexOf(name + ':color-mix(')
+    assert.ok(iMix > iSup, name + ' 的 color-mix 版本只在 @supports 内出现')
+  }
+  // 兜底值本体是不透明的主题输入底色（无 alpha 通道）
+  assert.ok(!/--dstz-frozen-(row|col)-bg:var\([^)]*rgba?\(/.test(css), '兜底值不得是半透明色')
+  mod.closePopup()
+})
+
+ok('<thead> 里的空行（<tr></tr>）：行冻结按钮禁用、不标记任何行；列冻结照常', () => {
+  mod.closePopup()
+  const table = makeHeadTable()
+  table.tHead.rows[0].cells = [] // 表头行一个单元格都没有
+  mod.openPopup(table)
+  const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
+  const panel = popup.children[0]
+  const clone = panel.querySelector('.dstz-body .dstz-table')
+  const rowBtn = freezeBtnOf(panel, 'row')
+  assert.equal(rowBtn.disabled, true, '没有可冻的表头行 → 按钮禁用')
+  assert.equal(rowBtn.getAttribute('aria-pressed'), 'false', '禁用时不得声称已开启')
+  assert.equal(rowBtn.title, mod.LABELS.freezeUnavailable, '给出原因文案')
+  assert.ok(!clone.classList.contains(mod.FREEZE_ROW_CLASS), '不得加行冻结状态类')
+  assert.equal(clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 0,
+    '不得把任何行当表头钉住')
+  const colBtn = freezeBtnOf(panel, 'col')
+  assert.equal(colBtn.disabled, undefined, '列冻结不受影响、照常可用')
+  assert.equal(colBtn.getAttribute('aria-pressed'), 'true', '列冻结默认开启')
+  // 点一下禁用的按钮不应改变任何状态
+  clickFreeze(panel, 'row')
+  assert.equal(rowBtn.getAttribute('aria-pressed'), 'false', '点击禁用按钮不切换状态')
   mod.closePopup()
 })
 

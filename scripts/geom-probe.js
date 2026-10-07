@@ -1,50 +1,75 @@
 /* eslint-disable */
 /**
  * 在夹具页里跑的探针（由 scripts/geom-check.mjs 通过 DSH 浏览器工具链 eval 执行）。
- * 返回值是一段 JSON 文本（前缀 GEOMJSON），判据在 geom-check.mjs 里做。
+ * 返回 'GEOMJSON' + 一段 JSON；**判据全在 geom-check.mjs 里**，本文件只负责取样，
+ * 而且每个读数都带上能自证的量（请求值 / 实际值 / 最大可滚值 / 容器自身的 rect）。
  *
- * 覆盖：
- *   ① 滚动到若干位置时 冻结首行 / 交叉格 / 首列 的吸附边与正文可视区内容边的偏差（都应为 0）
- *   ② 表头行任何一格都不会被数据格盖住（elementFromPoint 命中自己）—— 上一版几何缺陷的回归
- *   ③ 每个数据行首格都左向吸附（不允许出现「某一行首格不粘」）
- *   ④ zoom ∈ {0.6,0.75,1,1.25,1.5,2} 下 ① 仍为 0
- *   ⑤ 浅色/深色下 普通格 / 冻结首行 / 冻结首列 / 交叉格 的 backgroundColor（alpha 必须 1、三档互不相同）
- *      以及表头文字与底色的对比度
- *   ⑥ 两个按钮都关掉后：背景回原样、无残留标记、行数不变、聊天原表格不受影响
+ * 取样口径（driver 侧断言的强性质见 geom-check.mjs 头部）：
+ *   · 可滚性：每条样本都记 req / got / max —— 请求被夹住即判失败，不再「≥ 0 恒真」
+ *   · 不变性：吸附元素在多个滚动位置下的 rect；普通数据格的 rect（用于位移相等）
+ *   · 贴边用物理量：吸附边 rect 对比**滚动容器自身** rect + 它的 padding/border 读数
+ *   · 兜底：从 mod.CSS 里抽出「无 color-mix」的兜底值，内联套回去模拟无 @supports 的浏览器
+ *   · 既有能力：复制 Markdown（stub 剪贴板）/ 改尺寸 / 空格平移 / 未按空格不劫持 /
+ *     聊天页同型全局规则的竞争 / Esc 与遮罩关闭 / 打开期间锁页面滚动
+ *   · 结构语义：nohead / emptyhead / emptyheadrow / tfoot 四种表结构下的标记与吸附
+ * 需要等微任务的读数（剪贴板、_suppressClick 复位）写进 window.__dstzAsync / __dstzAsyncLate，
+ * 由 driver 再 eval 一次取回，避免依赖 eval 对 Promise 的支持。
  */
 (() => {
   const mod = window.__mod
-  const COLS = 20
-  const ROWS = 40
-  const wrap = document.getElementById('wrap')
-  let html = '<table id="src"><thead><tr>'
-  for (let c = 1; c <= COLS; c += 1) html += '<th>H' + c + '</th>'
-  html += '</tr></thead><tbody>'
-  for (let r = 1; r <= ROWS; r += 1) {
-    html += '<tr>'
-    for (let c = 1; c <= COLS; c += 1) html += '<td>r' + r + 'c' + c + '</td>'
-    html += '</tr>'
-  }
-  html += '</tbody></table>'
-  wrap.innerHTML = html
+  const fx = window.__fixture
+  const out = { fatal: null }
+  const done = () => 'GEOMJSON' + JSON.stringify(out)
+  if (!mod || typeof mod.openPopup !== 'function') { out.fatal = 'window.__mod 缺失（client.js 没加载成功？）'; return done() }
+  if (window.__FIXTURE_READY__ !== true) { out.fatal = '夹具未就绪：__FIXTURE_READY__=' + String(window.__FIXTURE_READY__); return done() }
 
-  const table = document.getElementById('src')
-  mod.openPopup(table)
-  const panel = document.querySelector('.dstz-panel')
-  const body = panel.querySelector('.dstz-body')
-  const inner = panel.querySelector('.dstz-inner')
-  const clone = panel.querySelector('.dstz-table')
-
+  const R = (v) => Math.round(v * 100) / 100
+  const q = (sel) => document.querySelector(sel)
   const cs = (el) => getComputedStyle(el)
-  const round = (v) => Math.round(v * 100) / 100
+  const rectOf = (el) => { const r = el.getBoundingClientRect(); return { top: R(r.top), left: R(r.left), right: R(r.right), bottom: R(r.bottom), w: R(r.width), h: R(r.height) } }
+  const px = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null }
+  const uniq = (a) => Array.from(new Set(a.map((v) => Math.max(0, Math.round(v))))).sort((x, y) => x - y)
+
+  const table = window.__fixtureTable
+  const bodyOverflowBefore = document.body.style.overflow
+  mod.openPopup(table)
+  let panel = q('.dstz-panel')
+  let body = q('.dstz-body')
+  let inner = q('.dstz-inner')
+  let clone = q('.dstz-table')
+  let overlay = q('.dstz-popup')
+  if (!panel || !body || !inner || !clone || !overlay) { out.fatal = '浮窗结构缺失（panel/body/inner/clone/overlay）'; return done() }
+
   const topCells = () => Array.from(clone.querySelectorAll('tr.dstz-freeze-top-row > *'))
-  const dataFirstCells = () => Array.from(clone.querySelectorAll('tbody > tr > *:first-child'))
-  const dev = (el) => {
-    const r = el.getBoundingClientRect()
-    const b = body.getBoundingClientRect()
-    return { top: round(r.top - b.top), left: round(r.left - b.left) }
+  const cornerCell = () => topCells()[0]
+  const headCell = () => topCells()[1] || topCells()[0]
+  const dataRow = (i) => clone.querySelectorAll('tbody > tr')[i]
+  const plainCell = (i) => { const r = dataRow(i); return r ? (r.children[2] || r.children[1]) : null }
+  const firstColCell = (i) => { const r = dataRow(i); return r ? r.children[0] : null }
+  /** 滚动容器自身的物理边缘（吸附边必须贴在这里；padding/border 另有独立断言）。 */
+  const edge = () => {
+    const r = rectOf(body)
+    return {
+      rect: r,
+      padTop: px(cs(body).paddingTop), padLeft: px(cs(body).paddingLeft),
+      borderTop: px(cs(body).borderTopWidth), borderLeft: px(cs(body).borderLeftWidth),
+      edgeTop: R(r.top + px(cs(body).borderTopWidth) + px(cs(body).paddingTop)),
+      edgeLeft: R(r.left + px(cs(body).borderLeftWidth) + px(cs(body).paddingLeft)),
+    }
   }
-  const vp = (el) => { const r = el.getBoundingClientRect(); return { top: round(r.top), left: round(r.left), w: round(r.width), h: round(r.height) } }
+  const scrollState = () => ({
+    scrollWidth: body.scrollWidth, clientWidth: body.clientWidth,
+    scrollHeight: body.scrollHeight, clientHeight: body.clientHeight,
+    maxScrollLeft: body.scrollWidth - body.clientWidth,
+    maxScrollTop: body.scrollHeight - body.clientHeight,
+    scrollbarX: body.offsetWidth - body.clientWidth,
+    scrollbarY: body.offsetHeight - body.clientHeight,
+  })
+  const setScroll = (st, sl) => {
+    if (st !== null) body.scrollTop = st
+    if (sl !== null) body.scrollLeft = sl
+    return { top: body.scrollTop, left: body.scrollLeft }
+  }
   // 只测「真正可见」的表头格：取该格与正文可视区的交集中心；完全滚出可视区的格跳过
   // （滚出视口的点 elementFromPoint 返回 null，那是取样问题不是几何问题）
   const visPoint = (el) => {
@@ -60,8 +85,8 @@
   /** 判据：可见表头格的采样点不得命中数据行（tbody）的格；可见的交叉格必须命中自己。 */
   const coverCheck = () => {
     const cells = topCells()
-    const samples = []
     const coveredByData = []
+    const samples = []
     let corner = { visible: false, ok: false, hit: null }
     for (const c of cells) {
       const p = visPoint(c)
@@ -95,70 +120,116 @@
     return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b)
   }
   const contrast = (fg, bg) => {
-    const l1 = lum(fg)
-    const l2 = lum(bg)
-    const hi = Math.max(l1, l2)
-    const lo = Math.min(l1, l2)
+    const l1 = lum(fg); const l2 = lum(bg)
+    const hi = Math.max(l1, l2); const lo = Math.min(l1, l2)
     return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100
   }
 
-  const out = {
-    fixture: { rows: ROWS, cols: COLS, ready: window.__FIXTURE_READY__ === true },
-    padding: { inner: { top: parseFloat(cs(inner).paddingTop), left: parseFloat(cs(inner).paddingLeft) }, body: { top: parseFloat(cs(body).paddingTop), left: parseFloat(cs(body).paddingLeft) } },
-    geom: [],
-    sticky: null,
-    zoom: [],
-    colors: {},
-    reset: null,
+  out.fixture = {
+    struct: 'normal', ready: true,
+    rows: table.rows.length, cols: table.rows[0].cells.length,
+    domRows: document.querySelectorAll('#wrap table.fx-src tr').length,
+    expectedRows: fx.DROWS + 1,
+    hasThead: table.tHead !== null, theadRows: table.tHead ? table.tHead.rows.length : 0,
+    hasTfoot: table.tFoot !== null,
+  }
+  out.scroll = scrollState()
+  out.edge = edge()
+  out.zoomProof = { base: R(rectOf(clone).w) }
+
+  // ── ① 垂直：同一元素在多个 scrollTop 下的 rect（不变性 + 位移相等） ───────────
+  out.vertical = []
+  {
+    const max = scrollState().maxScrollTop
+    const reqs = uniq([0, 40, 120, 300, max / 2, max])
+    for (const t of reqs) {
+      setScroll(t, 0)
+      const got = body.scrollTop
+      const hc = headCell(); const cc = cornerCell(); const pc = plainCell(4)
+      const cover = coverCheck()
+      const e = edge()
+      out.vertical.push({
+        req: t, got, max,
+        headTop: R(rectOf(hc).top), cornerTop: R(rectOf(cc).top), plainTop: R(rectOf(pc).top),
+        edgeTop: e.edgeTop, bodyTop: e.rect.top,
+        padTop: e.padTop, borderTop: e.borderTop,
+        headPosition: cs(hc).position, cornerZ: cs(cc).zIndex, headZ: cs(hc).zIndex, firstColZ: cs(firstColCell(0)).zIndex,
+        plainPosition: cs(plainCell(4)).position,
+        coveredByData: cover.coveredByData, headerChecked: cover.checked, cornerHit: cover.corner,
+      })
+      if (t === max) out.coverDebug = cover.samples
+    }
+    // 每个数据行首格都必须左向吸附（不允许出现「某一行首格不粘」）
+    setScroll(0, scrollState().maxScrollLeft)
+    const dcs = Array.from(clone.querySelectorAll('tbody > tr > *:first-child'))
+    const dbLeft = rectOf(body).left
+    out.firstColAllRows = {
+      rows: dcs.length,
+      stickyCount: dcs.filter((c) => cs(c).position === 'sticky').length,
+      notStuck: dcs.filter((c) => Math.abs(rectOf(c).left - dbLeft) > 0.5).length,
+      leftDevs: Array.from(new Set(dcs.map((c) => R(rectOf(c).left - dbLeft)))),
+    }
   }
 
-  // ① / ② 滚动到若干位置（含横竖同时滚）
-  const scrolls = [[0, 0], [120, 0], [300, 240], [700, 600], [1500, 900]]
-  for (const [st, sl] of scrolls) {
-    body.scrollTop = st
-    body.scrollLeft = sl
-    const cells = topCells()
-    const firstData = clone.querySelector('tbody > tr > *:first-child')
-    const cover = coverCheck()
-    if (st === 0 && sl === 0) {
-      out.hitDebug = cover.samples
-      out.hitDebugEnv = { vw: window.innerWidth, vh: window.innerHeight, body: vp(body), panel: vp(panel), clone: vp(clone) }
+  // ── ② 水平：同一元素在多个 scrollLeft 下的 rect ──────────────────────────────
+  out.horizontal = []
+  {
+    const max = scrollState().maxScrollLeft
+    const reqs = uniq([0, 40, 120, 300, max / 2, max])
+    for (const l of reqs) {
+      setScroll(0, l)
+      const got = body.scrollLeft
+      const cc = cornerCell(); const fc = firstColCell(4); const pc = plainCell(4)
+      const cover = coverCheck()
+      const e = edge()
+      out.horizontal.push({
+        req: l, got, max,
+        cornerLeft: R(rectOf(cc).left), firstColLeft: R(rectOf(fc).left), plainLeft: R(rectOf(pc).left),
+        edgeLeft: e.edgeLeft, bodyLeft: e.rect.left, padLeft: e.padLeft, borderLeft: e.borderLeft,
+        coveredByData: cover.coveredByData, headerChecked: cover.checked, cornerHit: cover.corner,
+      })
     }
-    out.geom.push({
-      req: { scrollTop: st, scrollLeft: sl },
-      got: { scrollTop: body.scrollTop, scrollLeft: body.scrollLeft },
-      headDev: dev(cells[1]),
-      cornerDev: dev(cells[0]),
-      firstColDev: dev(firstData),
-      headerCellsCovered: cover.coveredByData,
-      headerChecked: cover.checked,
-      cornerHit: cover.corner,
-      zIndex: { topRow: cs(cells[1]).zIndex, corner: cs(cells[0]).zIndex, firstCol: cs(firstData).zIndex, normal: cs(clone.querySelector('tbody > tr:nth-child(5) > td:nth-child(5)')).zIndex },
-      position: { topRow: cs(cells[1]).position, corner: cs(cells[0]).position, firstCol: cs(firstData).position, normal: cs(clone.querySelector('tbody > tr:nth-child(5) > td:nth-child(5)')).position },
-      scroll: { scrollWidth: body.scrollWidth, clientWidth: body.clientWidth, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight },
+  }
+
+  // ── ③ zoom 各档：每一档都要「真的缩放」+ 垂直序列的不变性/位移相等 ─────────────
+  out.zoom = []
+  for (const z of [0.6, 0.75, 1, 1.25, 1.5, 2]) {
+    clone.style.zoom = String(z)
+    const max = scrollState().maxScrollTop
+    const reqs = uniq([0, 40, 300, max])
+    const samples = []
+    for (const t of reqs) {
+      setScroll(t, 0)
+      const cover = coverCheck()
+      const e = edge()
+      samples.push({
+        req: t, got: body.scrollTop, max,
+        headTop: R(rectOf(headCell()).top), cornerTop: R(rectOf(cornerCell()).top),
+        plainTop: R(rectOf(plainCell(4)).top), edgeTop: e.edgeTop,
+        coveredByData: cover.coveredByData, headerChecked: cover.checked, cornerHit: cover.corner,
+      })
+    }
+    const stickySample = [0, 100, table.rows.length - 2].map((i) => {
+      const c = firstColCell(i)
+      return c ? { i, position: cs(c).position, sticky: cs(c).position === 'sticky' } : { i, position: null, sticky: false }
+    })
+    out.zoom.push({
+      zoom: z,
+      cloneRectWidth: R(rectOf(clone).w), cloneOffsetWidth: clone.offsetWidth,
+      scaleVsBase: R(rectOf(clone).w / out.zoomProof.base),
+      scroll: scrollState(), samples, stickySample,
+      firstColLeftAfterStick: R(rectOf(firstColCell(4)).left), edgeLeft: edge().edgeLeft,
     })
   }
+  clone.style.zoom = '1'
+  out.styleAfterZoomPhase = clone.getAttribute('style')
 
-  // ③ 水平方向：每个数据行首格都必须吸附
-  body.scrollLeft = 600
-  const dcs = dataFirstCells()
-  const dbs = body.getBoundingClientRect()
-  out.sticky = {
-    dataRows: dcs.length,
-    stickyCount: dcs.filter((c) => cs(c).position === 'sticky').length,
-    leftDevs: Array.from(new Set(dcs.map((c) => round(c.getBoundingClientRect().left - dbs.left)))),
-    notStuck: dcs.filter((c) => Math.abs(c.getBoundingClientRect().left - dbs.left) > 0.5).length,
-  }
-
-  // ⑤ 取四类单元格的引用（后面 zoom / 关闭复位还要用，故先取好）
-  const topCellsNow = topCells()
-  const midRow = clone.querySelectorAll('tbody > tr')[19]
-  const midCells = Array.from(midRow.children)
+  // ── ④ 底色（浅 / 深）+ 兜底声明（模拟不支持 color-mix 的浏览器） ─────────────
   const picked = {
-    normal: midCells[Math.floor(midCells.length / 2)],
-    header: topCellsNow[Math.floor(topCellsNow.length / 2)],
-    firstCol: midCells[0],
-    corner: topCellsNow[0],
+    normal: plainCell(19),
+    header: headCell(),
+    firstCol: firstColCell(19),
+    corner: cornerCell(),
   }
   const readColors = (tag) => {
     const panelBg = parseRgb(cs(panel).backgroundColor)
@@ -169,75 +240,246 @@
       const fg = parseRgb(cs(el).color)
       const effective = bg && bg.a === 1 ? bg : panelBg
       shot[key] = {
-        bg: cs(el).backgroundColor,
-        bgRgba: bg,
-        alpha: bg ? bg.a : null,
-        color: cs(el).color,
+        bg: cs(el).backgroundColor, bgRgba: bg, alpha: bg ? bg.a : null, color: cs(el).color,
         contrastVsEffectiveBg: fg && effective ? contrast(fg, effective) : null,
       }
     }
     shot.panel = { bg: cs(panel).backgroundColor, alpha: parseRgb(cs(panel).backgroundColor).a }
     shot.headerShadow = cs(picked.header).boxShadow
+    shot.varRow = cs(panel).getPropertyValue('--dstz-frozen-row-bg').trim()
+    shot.varCol = cs(panel).getPropertyValue('--dstz-frozen-col-bg').trim()
     out.colors[tag] = shot
   }
+  out.colors = {}
+  setScroll(300, 0)
   readColors('light')
   // 深色：夹具里 html.dark 覆盖同一批主题变量（真实 GUI 未实测，如实标注）
   document.documentElement.classList.add('dark')
   readColors('dark')
   document.documentElement.classList.remove('dark')
 
-  // ④ zoom 各档下 ① 仍应为 0
-  for (const z of [0.6, 0.75, 1, 1.25, 1.5, 2]) {
-    clone.style.zoom = String(z)
-    body.scrollTop = 300
-    body.scrollLeft = 240
-    const cells = topCells()
-    const firstData = clone.querySelector('tbody > tr > *:first-child')
-    out.zoom.push({
-      zoom: z,
-      zoomApplied: clone.style.zoom,
-      got: { scrollTop: body.scrollTop, scrollLeft: body.scrollLeft },
-      headDev: dev(cells[1]),
-      cornerDev: dev(cells[0]),
-      firstColDev: dev(firstData),
-      ...(() => { const cv = coverCheck(); return { headerCellsCovered: cv.coveredByData, headerChecked: cv.checked, cornerHit: cv.corner } })(),
-      scroll: { scrollWidth: body.scrollWidth, clientWidth: body.clientWidth, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight },
-    })
-  }
-  clone.style.zoom = '1'
-
-  // ⑥ 两个按钮都关掉（点真实按钮，走完整链路）
-  const btns = Array.from(panel.querySelectorAll('.dstz-freezeBtn'))
-  const beforeAria = btns.map((b) => b.getAttribute('aria-pressed'))
-  btns.forEach((b) => b.click())
-  body.scrollTop = 300
-  body.scrollLeft = 240
-  out.reset = {
-    buttons: btns.length,
-    ariaPressedBefore: beforeAria,
-    ariaPressedAfter: btns.map((b) => b.getAttribute('aria-pressed')),
-    className: clone.className,
-    markedRows: clone.querySelectorAll('tr.dstz-freeze-top-row').length,
-    inlineStyle: clone.getAttribute('style'),
-    rows: clone.querySelectorAll('tr').length,
-    backgrounds: {
-      normal: cs(picked.normal).backgroundColor,
-      header: cs(picked.header).backgroundColor,
-      firstCol: cs(picked.firstCol).backgroundColor,
-      corner: cs(picked.corner).backgroundColor,
-    },
-    positions: { header: cs(picked.header).position, firstCol: cs(picked.firstCol).position },
-    headerShadow: cs(picked.header).boxShadow,
-    // 聊天里的原表格：类名、行数、标记、背景都不该被改
-    original: {
-      className: table.className,
-      rows: table.querySelectorAll('tr').length,
-      markedRows: table.querySelectorAll('tr.dstz-freeze-top-row').length,
-      cellBg: cs(table.querySelector('td')).backgroundColor,
-      bodyOverflow: document.body.style.overflow,
-    },
+  // 兜底声明：从发布出去的 CSS 文本里抽出**第一处**（@supports 之前）取值，内联套回去，
+  // 模拟不支持 color-mix 的浏览器：冻结必须仍然不透明、仍然吸附。
+  {
+    const cssText = String(mod.CSS || '')
+    const grab = (name) => {
+      const m = new RegExp(name + ':([^;}]+)[;}]').exec(cssText)
+      return m ? m[1].trim() : null
+    }
+    out.fallback = { cssHasSupports: /@supports\s*\(color:\s*color-mix/.test(cssText), row: grab('--dstz-frozen-row-bg'), col: grab('--dstz-frozen-col-bg') }
+    if (out.fallback.row && out.fallback.col) {
+      panel.style.setProperty('--dstz-frozen-row-bg', out.fallback.row)
+      panel.style.setProperty('--dstz-frozen-col-bg', out.fallback.col)
+      setScroll(300, 300)
+      const cover = coverCheck()
+      out.fallbackSim = {
+        headerBg: cs(picked.header).backgroundColor, headerAlpha: (parseRgb(cs(picked.header).backgroundColor) || {}).a,
+        firstColBg: cs(picked.firstCol).backgroundColor, cornerBg: cs(picked.corner).backgroundColor,
+        headerPosition: cs(picked.header).position, firstColPosition: cs(picked.firstCol).position,
+        headTop: R(rectOf(picked.header).top), edgeTop: edge().edgeTop,
+        coveredByData: cover.coveredByData, headerChecked: cover.checked,
+      }
+      panel.style.removeProperty('--dstz-frozen-row-bg')
+      panel.style.removeProperty('--dstz-frozen-col-bg')
+    }
   }
 
-  mod.closePopup()
-  return 'GEOMJSON' + JSON.stringify(out)
+  // ── ⑤ 既有能力：复制 Markdown / 改尺寸 / 空格平移 / 未按空格不劫持 ────────────
+  setScroll(300, 300)
+  out.features = {}
+  {
+    const copyBtn = q('.dstz-copy-btn') || q('.dstz-copyBtn')
+    const expected = mod.tableToMarkdown(table)
+    let copied = null
+    const original = navigator.clipboard
+    let stub = 'ok'
+    try {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, get: () => ({ writeText: (t) => { copied = String(t); return Promise.resolve() } }) })
+    } catch (e) { stub = 'ERR ' + (e && e.message) }
+    copyBtn.click()
+    out.features.copy = {
+      stubInstalled: stub === 'ok', expectedLength: expected.length, expectedHead: expected.slice(0, 60),
+      buttonLabelImmediately: copyBtn.textContent, buttonDisabledImmediately: copyBtn.disabled === true,
+      clicked: true, hadClipboardBefore: !!original,
+    }
+    window.setTimeout(() => {
+      window.__dstzAsync = {
+        copiedLength: copied === null ? -1 : copied.length,
+        copiedHead: copied === null ? null : copied.slice(0, 60),
+        copiedEqualsSerialize: copied === expected,
+        copiedHasAllRows: copied !== null && copied.split('\n').filter((l) => l.indexOf('|') === 0).length >= window.__fixture.DROWS,
+        buttonLabel: copyBtn.textContent, buttonDisabled: copyBtn.disabled === true,
+        suppressClickAfterResize: !!q('.dstz-popup') && !!q('.dstz-popup')._suppressClick,
+        bodyOverflowWhileOpen: document.body.style.overflow,
+      }
+    }, 120)
+    window.setTimeout(() => {
+      window.__dstzAsyncLate = { buttonLabel: copyBtn.textContent, buttonDisabled: copyBtn.disabled === true }
+    }, 4000) // 4s：给「已复制 → 1.6s 后复位」留足时间（后台标签页的定时器会被钳到 ≥1s）
+
+    // 改尺寸：面板已经很宽（自适应到视口上限），所以往**小**拖才有确定的位移
+    const handle = q('.dstz-resizeSE')
+    const before = rectOf(panel)
+    const pev = (type, x, y) => new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 7, pointerType: 'mouse', isPrimary: true })
+    const x0 = before.right - 8; const y0 = before.bottom - 8
+    handle.dispatchEvent(pev('pointerdown', x0, y0))
+    handle.dispatchEvent(pev('pointermove', x0 - 120, y0 - 60))
+    const mid = { resizing: panel.classList.contains('dstz-resizing'), suppress: !!overlay._suppressClick }
+    handle.dispatchEvent(pev('pointerup', x0 - 120, y0 - 60))
+    const after = rectOf(panel)
+    out.features.resize = {
+      beforeW: before.w, beforeH: before.h, afterW: after.w, afterH: after.h,
+      dw: R(after.w - before.w), dh: R(after.h - before.h),
+      resizingDuringDrag: mid.resizing, suppressDuringDrag: mid.suppress,
+      resizingClassAfterUp: panel.classList.contains('dstz-resizing'),
+      suppressClickAfterUp: !!overlay._suppressClick,
+    }
+
+    // 空格 + 拖拽平移
+    setScroll(300, 300)
+    const panStart = { top: body.scrollTop, left: body.scrollLeft }
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }))
+    const armed = body._dstzSpaceArmed === true
+    const grabbable = body.classList.contains('dstz-grabbable')
+    body.dispatchEvent(pev('pointerdown', 700, 400))
+    body.dispatchEvent(pev('pointermove', 550, 320))
+    const panMid = { top: body.scrollTop, left: body.scrollLeft, panning: body.classList.contains('dstz-panning') }
+    body.dispatchEvent(pev('pointerup', 550, 320))
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }))
+    out.features.pan = {
+      armed, grabbable, startTop: panStart.top, startLeft: panStart.left,
+      midTop: panMid.top, midLeft: panMid.left, panningDuringDrag: panMid.panning,
+      dTop: panMid.top - panStart.top, dLeft: panMid.left - panStart.left,
+      panningAfterUp: body.classList.contains('dstz-panning'),
+      armedAfterKeyUp: body._dstzSpaceArmed === true,
+      grabbableAfterKeyUp: body.classList.contains('dstz-grabbable'),
+    }
+
+    // 未按空格时：pointerdown 不得被预防（否则会毁掉原生框选文字）
+    setScroll(300, 300)
+    const notPrevented = body.dispatchEvent(pev('pointerdown', 700, 400))
+    out.features.noSpaceDrag = {
+      notPrevented, panningClass: body.classList.contains('dstz-panning'),
+      scrollDelta: body.scrollLeft - 300, armed: body._dstzSpaceArmed === true,
+    }
+  }
+
+  // ── ⑥ 聊天页同型全局规则（插件样式表之后注入）能否盖掉冻结 ──────────────────
+  {
+    if (typeof fx.injectChatLikeCss === 'function') fx.injectChatLikeCss()
+    setScroll(300, 300)
+    const cover = coverCheck()
+    out.chatCssCompetition = {
+      injected: document.getElementById('fx-chat-css') !== null,
+      headerPosition: cs(picked.header).position, headerZ: cs(picked.header).zIndex,
+      headerBg: cs(picked.header).backgroundColor, headerAlpha: (parseRgb(cs(picked.header).backgroundColor) || {}).a,
+      firstColPosition: cs(picked.firstCol).position, cornerZ: cs(picked.corner).zIndex,
+      headTop: R(rectOf(picked.header).top), edgeTop: edge().edgeTop,
+      coveredByData: cover.coveredByData, headerChecked: cover.checked,
+    }
+  }
+
+  // ── ⑦ 关闭冻结：只增删冻结类，不写内联样式（缩放的 zoom 另算，见文档边界） ────
+  {
+    const styleBefore = clone.getAttribute('style')
+    const btns = Array.from(panel.querySelectorAll('.dstz-freezeBtn'))
+    const ariaBefore = btns.map((b) => b.getAttribute('aria-pressed'))
+    btns.forEach((b) => b.click())
+    setScroll(300, 300)
+    const after = {
+      buttons: btns.length,
+      ariaBefore, ariaAfter: btns.map((b) => b.getAttribute('aria-pressed')),
+      className: clone.className, markedRows: clone.querySelectorAll('tr.dstz-freeze-top-row').length,
+      stickyCells: Array.from(clone.querySelectorAll('td,th')).filter((el) => cs(el).position === 'sticky').length,
+      inlineStyleAfter: clone.getAttribute('style'),
+      rows: clone.querySelectorAll('tr').length,
+      backgrounds: { normal: cs(picked.normal).backgroundColor, header: cs(picked.header).backgroundColor, firstCol: cs(picked.firstCol).backgroundColor, corner: cs(picked.corner).backgroundColor },
+      positions: { header: cs(picked.header).position, firstCol: cs(picked.firstCol).position },
+      headerShadow: cs(picked.header).boxShadow,
+      // 聊天里的原表格：类名、行数、标记、背景都不该被改
+      original: {
+        className: table.className, rows: table.rows.length,
+        markedRows: table.querySelectorAll('tr.dstz-freeze-top-row').length,
+        cellBg: cs(table.querySelector('td')).backgroundColor,
+      },
+    }
+    after.sameInlineStyleAsBefore = after.inlineStyleAfter === styleBefore
+    out.reset = after
+    // 边界（必修 4 裁定：清 vs 文档写清）：Ctrl+滚轮缩放写下的内联 zoom 属于缩放功能，
+    // 关闭冻结不去动它；把它记下来，让「关闭冻结不留内联样式」这句话的边界可核对。
+    clone.style.zoom = '0.6'
+    btns.forEach((b) => b.click())
+    btns.forEach((b) => b.click())
+    out.reset.inlineStyleWithZoom = clone.getAttribute('style')
+    out.reset.classNameWithZoom = clone.className
+    out.reset.markedRowsWithZoom = clone.querySelectorAll('tr.dstz-freeze-top-row').length
+    clone.style.zoom = '1'
+    // 重新打开冻结，供后面结构用例之前保持一致（随后会 closePopup）
+    btns.forEach((b) => b.click())
+  }
+
+  // ── ⑧ 关闭路径：Esc / 遮罩点击 / 页面滚动锁定 ───────────────────────────────
+  {
+    out.close = { bodyOverflowWhileOpen: document.body.style.overflow, bodyOverflowBefore }
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    out.close.afterEsc = { popups: document.querySelectorAll('.dstz-popup').length, bodyOverflow: document.body.style.overflow }
+    // 再开一次，点遮罩关
+    mod.openPopup(table)
+    const ov = q('.dstz-popup')
+    out.close.reopened = !!ov && document.querySelectorAll('.dstz-popup').length === 1
+    if (ov) { ov.dispatchEvent(new MouseEvent('click', { bubbles: true })) }
+    out.close.afterOverlayClick = { popups: document.querySelectorAll('.dstz-popup').length, bodyOverflow: document.body.style.overflow }
+    // 再开一次，用标题栏上的关闭按钮关（顺带证明按钮没被拖拽劫持）
+    mod.openPopup(table)
+    const ov2 = q('.dstz-popup')
+    const closeBtn = ov2 ? ov2.querySelector('.dstz-iconButton') : null
+    if (closeBtn) {
+      closeBtn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 0, buttons: 1, pointerId: 11, pointerType: 'mouse', isPrimary: true }))
+      closeBtn.click()
+    }
+    out.close.afterCloseButton = { popups: document.querySelectorAll('.dstz-popup').length, bodyOverflow: document.body.style.overflow }
+  }
+
+  // ── ⑨ 结构语义：nohead / emptyhead / emptyheadrow / tfoot ───────────────────
+  {
+    const readStruct = (name) => {
+      const t = fx.build(name === 'tfoot' ? 'tfoot' : name, 30, 6)
+      mod.openPopup(t)
+      const p = q('.dstz-panel'); const c = q('.dstz-table')
+      const btns = p ? Array.from(p.querySelectorAll('.dstz-freezeBtn')) : []
+      const rowBtn = btns[0]
+      const firstHeadCell = c ? c.querySelector('thead > tr > *:first-child') : null
+      const firstBodyCell = c ? c.querySelector('tbody > tr > *:first-child') : null
+      const firstFootCell = c ? c.querySelector('tfoot > tr > *:first-child') : null
+      const res = {
+        tableRows: t.rows.length,
+        tHead: t.tHead ? t.tHead.rows.length : null,
+        tHeadFirstCells: t.tHead && t.tHead.rows[0] ? t.tHead.rows[0].cells.length : null,
+        tFoot: t.tFoot ? t.tFoot.rows.length : null,
+        markedRows: c ? c.querySelectorAll('tr.dstz-freeze-top-row').length : -1,
+        markedIsFirstBodyRow: !!(c && c.querySelector('tbody > tr') && c.querySelector('tbody > tr').classList.contains('dstz-freeze-top-row')),
+        rowBtnAriaPressed: rowBtn ? rowBtn.getAttribute('aria-pressed') : null,
+        rowBtnDisabled: rowBtn ? rowBtn.disabled === true : null,
+        rowBtnTitle: rowBtn ? rowBtn.title : null,
+        colBtnAriaPressed: btns[1] ? btns[1].getAttribute('aria-pressed') : null,
+        headFirstPosition: firstHeadCell ? cs(firstHeadCell).position : null,
+        bodyFirstPosition: firstBodyCell ? cs(firstBodyCell).position : null,
+        footFirstPosition: firstFootCell ? cs(firstFootCell).position : null,
+        stickyCells: c ? Array.from(c.querySelectorAll('td,th')).filter((el) => cs(el).position === 'sticky').length : -1,
+        headStickyCells: c ? Array.from(c.querySelectorAll('tr.dstz-freeze-top-row > *')).filter((el) => cs(el).position === 'sticky').length : -1,
+      }
+      mod.closePopup()
+      return res
+    }
+    out.structs = {
+      nohead: readStruct('nohead'),
+      emptyhead: readStruct('emptyhead'),
+      emptyheadrow: readStruct('emptyheadrow'),
+      tfoot: readStruct('tfoot'),
+    }
+    // 还原主夹具表，避免后续（driver 可能再跑一次）看到被换掉的表
+    window.__fixtureTable = fx.build('normal')
+  }
+
+  return done()
 })()

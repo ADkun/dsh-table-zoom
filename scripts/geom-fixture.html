@@ -2,12 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>dstz 冻结首行/首列 几何与底色夹具</title>
+<title>dstz 冻结首行/首列 几何夹具（由 scripts/geom-check.mjs 与 lib/client.js 一起复制到临时目录）</title>
 <style>
   /* 夹具用的 DSH 主题变量（真实浏览器的真 DOM 解析，供 scripts/geom-probe.js 测量）。
      与本次功能直接相关的那几个变量（--dsw-specific-input-major / --dsw-alias-label-primary
      / --dsw-alias-border-l3）取自 dsh-client-ui-theme 的真实定义；其余是等价近似值，
-     只为让浮窗长成正常样子。html.dark 模拟深色主题（境外 var 值取自同一份主题定义）。 */
+     只为让浮窗长成正常样子。html.dark 模拟深色主题（var 值取自同一份主题定义）。
+     本页必须与 client.js 同目录打开（geom-check.mjs 负责复制），否则插件加载不到。 */
   :root {
     --dsw-specific-input-major: #ffffff;
     --dsw-alias-label-primary: #0f1115;
@@ -41,8 +42,9 @@
     font-family: system-ui, sans-serif;
   }
   #wrap { padding: 24px; }
-  /* 聊天里原表格的近似样式（只作用于 #src 自己，浮窗里的克隆表不会命中这些选择器） */
-  #src th, #src td { border: 1px solid var(--dsw-alias-border-l2); padding: 8px 14px; min-width: 100px; }
+  /* 聊天里原表格的近似样式。故意用类选择器而不是 id：克隆表会连 id 一起复制，
+     用 #id 选择器会让这些规则也命中浮窗里的克隆表（夹具特有的假象）。 */
+  .fx-src th, .fx-src td { border: 1px solid var(--dsw-alias-border-l2); padding: 8px 14px; min-width: 100px; }
 </style>
 </head>
 <body>
@@ -53,8 +55,67 @@
 </script>
 <script src="client.js"></script>
 <script>
-  window.__FIXTURE_READY__ = !!(window.__mod && window.__mod.openPopup)
-  if (!window.__FIXTURE_READY__) console.error('client.js 未加载成功')
+  // 夹具**自己**把表格建出来（不再由探针注入）：探针只负责驱动滚动 / 测量 / 断言。
+  // 默认 300 行 —— 纵向必须真的滚得动，这是几何回归的硬前提（可视区约 660px）。
+  (() => {
+    const P = new URLSearchParams(location.search)
+    const DROWS = Math.max(20, Number(P.get('rows') || 300))
+    const DCOLS = Math.max(3, Number(P.get('cols') || 20))
+    const wrap = document.getElementById('wrap')
+
+    /** 按结构建一张真表格。struct: normal | nohead | emptyhead | emptyheadrow | tfoot */
+    function build(struct, rows, cols) {
+      const s = struct || 'normal'
+      const rn = rows || DROWS
+      const cn = cols || DCOLS
+      let html = '<table class="fx-src">'
+      if (s === 'emptyhead') {
+        html += '<thead></thead>'
+      } else if (s === 'emptyheadrow') {
+        html += '<thead><tr></tr></thead>'
+      } else if (s !== 'nohead') {
+        html += '<thead><tr>'
+        for (let c = 1; c <= cn; c += 1) html += '<th>H' + c + '</th>'
+        html += '</tr></thead>'
+      }
+      html += '<tbody>'
+      for (let r = 1; r <= rn; r += 1) {
+        html += '<tr>'
+        for (let c = 1; c <= cn; c += 1) html += '<td>r' + r + 'c' + c + '</td>'
+        html += '</tr>'
+      }
+      html += '</tbody>'
+      if (s === 'tfoot') {
+        html += '<tfoot><tr>'
+        for (let c = 1; c <= cn; c += 1) html += '<td>f' + c + '</td>'
+        html += '</tr></tfoot>'
+      }
+      html += '</table>'
+      wrap.innerHTML = html
+      return wrap.querySelector('table.fx-src')
+    }
+
+    /**
+     * 在插件样式表**之后**注入一条「仿造的聊天页全局表格规则」（无范围、低特异性），
+     * 验证插件规则胜出靠的是特异性 + 后出现顺序，而不是运气。真 GUI 里作用域限于会话
+     * 容器的选择器不会命中 .dstz-popup 下的克隆表，能与之竞争的只有这种全局规则。
+     */
+    function injectChatLikeCss() {
+      if (document.getElementById('fx-chat-css') !== null) return
+      const st = document.createElement('style')
+      st.id = 'fx-chat-css'
+      st.textContent = 'td,th{background:rgba(0,0,0,0);position:static}'
+        + '.fx-md-table th,.fx-md-table td{background:rgba(0,0,0,0);position:static;z-index:1}'
+      document.head.appendChild(st)
+    }
+
+    window.__fixture = { build, injectChatLikeCss, DROWS, DCOLS }
+    window.__fixtureTable = build('normal')
+    const trs = document.querySelectorAll('#wrap table.fx-src tr').length
+    window.__FIXTURE_READY__ = !!(window.__mod && typeof window.__mod.openPopup === 'function'
+      && window.__fixtureTable !== null && trs === DROWS + 1)
+    if (!window.__FIXTURE_READY__) console.error('夹具未就绪：client.js 没加载成功？还是表格没建出来？（trs=' + trs + '）')
+  })()
 </script>
 </body>
 </html>

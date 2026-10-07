@@ -123,7 +123,23 @@ ok('client.js 样式表含冻结首行/首列规则', () => {
   assert.equal(typeof mod.CSS, 'string')
   assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-row tr.dstz-freeze-top-row>*'),
     '缺少冻结首行规则（应认 JS 打的 dstz-freeze-top-row 标记类，不再靠 tr:first-child 猜）')
-  assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-col tr>*:first-child'), '缺少冻结首列规则')
+  assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-col thead>tr>*:first-child,.dstz-table.dstz-freeze-col tbody>tr>*:first-child'),
+    '缺少冻结首列规则（须分别写 thead/tbody 两条：写 `tr:first-child` 会把 <tfoot> 首格也冻住）')
+  assert.ok(!/dstz-freeze-col tr>\*:first-child/.test(mod.CSS),
+    '列冻结不得用不带 thead/tbody 限定的 tr 选择器（会冻住 tfoot 首格）')
+  // 兜底：不支持 color-mix 的浏览器整条声明会被丢弃 → 必须先用不透明主题底色兜底，
+  // 再用 @supports 覆盖成混合色（两条都在，顺序不能反）
+  assert.ok(/@supports\s*\(color:\s*color-mix/.test(mod.CSS), '混合底色须包在 @supports 里')
+  const supAt = mod.CSS.indexOf('@supports (color: color-mix')
+  const fbRowAt = mod.CSS.indexOf('--dstz-frozen-row-bg:')
+  const fbColAt = mod.CSS.indexOf('--dstz-frozen-col-bg:')
+  const decl = (at) => mod.CSS.slice(at, mod.CSS.indexOf(';', at))
+  assert.ok(fbRowAt >= 0 && fbColAt >= 0 && fbRowAt < supAt && fbColAt < supAt,
+    '@supports 之前必须先有不依赖 color-mix 的兜底声明（否则不支持的浏览器里冻结格会变透明）')
+  assert.ok(!decl(fbRowAt).includes('color-mix') && /--dsw-specific-input-major/.test(decl(fbRowAt)),
+    '首行兜底取值必须是主题里不透明的底色：' + decl(fbRowAt))
+  assert.ok(!decl(fbColAt).includes('color-mix') && /--dsw-specific-input-major/.test(decl(fbColAt)),
+    '首列兜底取值同上：' + decl(fbColAt))
   assert.ok(mod.CSS.includes('position:sticky;top:0'), '竖向吸附应写 top:0（内边距已挪到 .dstz-inner，偏移与 padding/断点/zoom 解耦）')
   assert.ok(mod.CSS.includes('position:sticky;left:0'), '横向吸附应写 left:0')
   assert.ok(!/position:sticky;top:-/.test(mod.CSS) && !/position:sticky;left:-/.test(mod.CSS),
@@ -183,6 +199,35 @@ ok('applyFreeze 标记「要吸附的那一行」（有 / 无 thead 两条路径
   assert.ok(!r1.s.has(mod.FREEZE_TOP_ROW_CLASS))
   mod.applyFreeze(noHead, { row: false, col: false })
   assert.equal(r0.s.size, 0, '无 thead 的表关闭后也不得残留标记')
+})
+ok('findFreezeTopRow / isFreezeRowToggleable：空 <thead> 不把数据行当表头', () => {
+  assert.equal(typeof mod.findFreezeTopRow, 'function', 'findFreezeTopRow 应导出（回归脚本要用）')
+  assert.equal(typeof mod.isFreezeRowToggleable, 'function')
+  const mkRow = () => ({ classList: { add() {}, remove() {} } })
+  const h = mkRow(); const d1 = mkRow()
+  assert.equal(mod.findFreezeTopRow({ rows: [h, d1], tHead: { rows: [h] } }), h, '有非空 thead 取 thead 首行')
+  assert.equal(mod.findFreezeTopRow({ rows: [d1], tHead: { rows: [] } }), null, 'thead 无行 → 没有可冻结的表头行')
+  assert.equal(mod.findFreezeTopRow({ rows: [d1], tHead: { rows: [{ cells: [] }] } }), null,
+    '表头行一个单元格都没有（<thead><tr></tr></thead>）→ 冻了也没有可吸附的格，同样不可用')
+  assert.equal(mod.findFreezeTopRow({ rows: [d1], tHead: { rows: [{ cells: [{}, {}] }] } }) !== null, true,
+    '表头行有单元格 → 可用')
+  assert.equal(mod.isFreezeRowToggleable({ rows: [d1], tHead: { rows: [] } }), false)
+  assert.equal(mod.findFreezeTopRow({ rows: [d1], tHead: null }), d1, '无 thead 取表格首行')
+  assert.equal(mod.isFreezeRowToggleable({ rows: [d1], tHead: null }), true)
+  assert.equal(mod.findFreezeTopRow({ rows: [], tHead: null }), null, '空表没有可冻结的行')
+  assert.equal(mod.findFreezeTopRow(null), null)
+})
+ok('applyFreeze：空 <thead> 的表不得标记任何行（否则数据行会被钉在顶部）', () => {
+  const mkRow = () => {
+    const s = new Set()
+    return { s, classList: { add: (c) => s.add(c), remove: (c) => s.delete(c) } }
+  }
+  const d1 = mkRow(); const d2 = mkRow()
+  const emptyHead = { rows: [d1, d2], tHead: { rows: [] }, classList: { add() {}, remove() {} } }
+  mod.applyFreeze(emptyHead, { row: true, col: true })
+  assert.equal(d1.s.size + d2.s.size, 0, '空 thead 时一行都不该被标记')
+  mod.applyFreeze(emptyHead, { row: false, col: false })
+  assert.equal(d1.s.size + d2.s.size, 0, '关闭后同样无残留')
 })
 
 // --- rc2 兼容：client.js 样式数组必须含宽表覆盖规则（防后续编辑误删） ---
