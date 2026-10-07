@@ -37,9 +37,11 @@ DeepSeek Harness (dsh) Web GUI 聊天表格浮窗插件。
 - **冻结首行 / 冻结首列（默认开启）**：浮窗里上下滚动时表头行始终可见，
   左右滚动时第一列始终可见，左上角交叉单元格两个方向都吸附；头部两个按钮
   「↕ 冻结首行」「↔ 冻结首列」可各自独立切换，激活态高亮并带 `aria-pressed`
-  状态；关掉后完全回到原行为（无 sticky 残留、无额外内边距）；吸附单元格
-  带不透明主题背景（浅色/深色主题都正常），并用 `box-shadow` 补齐
-  `border-collapse` 下会丢失的分隔线；
+  状态；关掉后完全回到原行为（无 sticky 残留、无内联样式、无额外节点）；
+  吸附单元格**两档不透明底色**（`color-mix` 从主题变量派生：首行重一档、
+  首列轻一档），浅色/深色主题都对得上，并用 `box-shadow` 补齐
+  `border-collapse` 下会丢失的分隔线；吸附偏移为 0（正文内边距挪到内层
+  `.dstz-inner` 上，sticky 才能贴齐可视区边缘——见「设计说明.md」）；
 - **列宽适配**：列宽上限与聊天内一致（`min(30vw, 320px)`），超宽列自动换行收缩，
   表格整体不再撑破浮窗。
 
@@ -108,8 +110,14 @@ npm install
 ```sh
 npm run selfcheck    # 纯函数离线测试（识别/长表判定/Markdown 序列化/冻结状态类）
 npm run smoke        # selfcheck + 假 DOM 端到端冒烟（按钮注入/浮窗开合/复制/冻结开关）
+npm run smoke:geom   # 真实浏览器几何 + 底色回归（无头；本机没有 DSH 浏览器工具链时自动 SKIP）
 npm run pack         # 打包
 ```
+
+`smoke:geom` 会起一个临时夹具页（`scripts/geom-fixture.html`，真 DOM 真表格 +
+模拟主题变量），用无头浏览器读数值断言：吸附偏差、可见表头格不被数据格盖住、
+每个数据行首格都左向吸附、z-index 层次、6 档缩放下同上、浅/深两色底色与对比度、
+两个按钮关闭后无残留且聊天原表不受影响。
 
 ## 兼容性
 
@@ -141,7 +149,8 @@ npm run pack         # 打包
 ## AI 生成声明
 
 代码与文档由 AI 辅助生成（DeepSeek Harness），均经人工审查与实机验证
-（`npm run smoke`：selfcheck + 假 DOM 端到端冒烟）。
+（`npm run smoke`：selfcheck + 假 DOM 端到端冒烟；`npm run smoke:geom`：
+无头浏览器 + 夹具页的几何/底色数值回归）。
 
 ## License
 

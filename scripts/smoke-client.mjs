@@ -90,8 +90,19 @@ function makeEl(tag) {
         for (const c of copy.children) c.parentNode = copy
       }
       // 真实 DOM 里 rows/tHead 是活访问器，克隆后指向克隆体内的元素；
-      // 假 DOM 需把 rows 重映射到「克隆树里对应的行元素」上（否则插行会插到原表里）
+      // 假 DOM 需把 rows/tHead 重映射到「克隆树里对应的元素」上（否则读写会落到原表上）
       copy.tHead = this.tHead
+      if (deep) {
+        const heads = []
+        const collectHeads = (node) => {
+          for (const c of node.children) {
+            if (c.tagName === 'THEAD') heads.push(c)
+            collectHeads(c)
+          }
+        }
+        collectHeads(copy)
+        if (heads.length) copy.tHead = heads[0]
+      }
       if (Array.isArray(this.rows)) {
         const deepRows = []
         const collect = (node) => {
@@ -309,15 +320,21 @@ ok('openPopup 创建浮窗并克隆表格', () => {
   assert.equal(panel.className, 'dstz-panel')
   const titleText = panel.children[0].textContent
   assert.ok(titleText.includes('2'), 'title should include row count: ' + titleText)
-  const clone = panel.children[1].children[0]
+  const clone = panel.querySelector('.dstz-body .dstz-table')
   assert.ok(clone.classList.contains('dstz-table'), 'clone should carry dstz-table class: ' + clone.className)
-  // 表格无 thead 时，默认开启的冻结首行会额外克隆一份首行用于吸附
-  assert.equal(clone.children.length, 3, 'clone should carry both rows (+ frozen header clone)')
-  // 关掉冻结首行后回到原结构，确认多出来的那一行只来自冻结
+  // 内边距在 .dstz-inner 上（滚动容器 .dstz-body 无内边距，sticky 偏移才能写 0）
+  assert.ok(panel.querySelector('.dstz-body .dstz-inner .dstz-table') === clone, '克隆表应包在 .dstz-inner 里')
+  // 无 thead 的表：不克隆行，只在现有行上打吸附标记（默认开启）
+  assert.equal(clone.children.length, 2, 'clone should carry both rows')
+  assert.equal(clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 1,
+    '默认开启时应有一行被标记为吸附行')
+  // 关掉冻结首行后标记撤掉，行数始终不变
   const freezeRowBtn = freezeBtnOf(panel, 'row')
   assert.ok(freezeRowBtn !== undefined, 'freeze row button should be present')
   clickFreeze(panel, 'row')
-  assert.equal(clone.children.length, 2, 'clone should carry both rows once freeze is off')
+  assert.equal(clone.children.length, 2, 'clone should still carry both rows once freeze is off')
+  assert.equal(clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 0,
+    '关闭冻结后不得残留吸附行标记')
   assert.equal(documentEl.body.style.overflow, 'hidden', 'body scroll locked')
 })
 
@@ -485,7 +502,7 @@ ok('Ctrl+滚轮缩放表格字体', () => {
   mod.openPopup(table)
   const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
   const panel = popup.children[0]
-  const clone = panel.children[1].children[0]
+  const clone = panel.querySelector('.dstz-body .dstz-table')
   const small = panel.children[0].children[0].children[0]
   assert.equal(clone.style.zoom, '1')
   assert.ok(!small.textContent.includes('%'), 'zoom 1 时不显示百分比')
@@ -545,6 +562,8 @@ function makeHeadTable(rowCount = 10, colCount = 3) {
   table.appendChild(thead)
   table.appendChild(body)
   table.tHead = thead
+  // 真实 DOM 里 <thead>.rows 是活访问器；假 DOM 需显式给，才能覆盖「有 thead」那条分支
+  thead.rows = [headRow]
   table.rows = [headRow, ...bodyRows]
   return table
 }
@@ -628,33 +647,48 @@ ok('两项都关闭后无残留：无冻结类、无内联样式、无额外节�
   assert.equal(clone.className, 'dstz-table', '关闭后只剩基础类，无 sticky 状态残留')
   assert.equal(clone.getAttribute('style'), null, '关闭后不留下任何内联样式')
   assert.equal(clone.children.length, rowsBefore, '关闭后不残留额外克隆行')
-  assert.ok(clone.querySelector('.dstz-freeze-row-clone') === null)
-  // 聊天里的原表格始终不受影响
+  assert.equal(clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 0,
+    '关闭后不残留吸附行标记')
+  // 聊天里的原表格始终不受影响（含行上的标记类）
   assert.equal(table.className, '', '原表格类名未被改动')
   assert.equal(table.rows.length, 10, '原表格行数不变')
   assert.equal(table.getAttribute('style'), null, '原表格无内联样式')
+  assert.equal(table.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 0,
+    '原表格的行不得被标记')
   mod.closePopup()
 })
 
-ok('冻结样式规则齐备：两向 sticky、层次 z-index、不透明主题背景、box-shadow 分隔线', () => {
+ok('冻结样式规则齐备：两向 sticky（偏移 0）、层次 z-index、两档不透明主题底色、box-shadow 分隔线', () => {
   const css = mod.CSS
-  // 两个方向都吸附
-  assert.ok(/\.dstz-freeze-row[^{]*\{[^}]*position:sticky;top:-14px/.test(css), '首行 sticky top:-14px（抵消正文 padding-top）')
-  assert.ok(/\.dstz-freeze-col[^{]*\{[^}]*position:sticky;left:-18px/.test(css), '首列 sticky left:-18px（抵消正文 padding-left）')
+  // 两个方向都吸附，偏移一律 0（内边距在 .dstz-inner 上 ⇒ 与 padding/断点/zoom 全解耦）
+  assert.ok(/\.dstz-table\.dstz-freeze-row tr\.dstz-freeze-top-row>\*\{position:sticky;top:0/.test(css), '首行 sticky top:0')
+  assert.ok(/\.dstz-table\.dstz-freeze-col tr>\*:first-child\{position:sticky;left:0;z-index:4/.test(css), '首列 sticky left:0、z-index:4')
+  assert.ok(!/position:sticky;(top|left):-/.test(css), '不得再写死负偏移（zoom≠1 时会错位）')
+  const bodyRule = /\.dstz-body\{([^}]*)\}/.exec(css)
+  assert.ok(bodyRule !== null && !bodyRule[1].includes('padding'), '滚动容器 .dstz-body 不得有内边距')
+  assert.ok(css.includes('.dstz-inner{padding:14px 18px 18px}') && css.includes('.dstz-inner{padding:10px 12px 12px}'),
+    '内边距落在 .dstz-inner（含 720px 断点）')
   // 交叉单元格层次最高
-  assert.ok(/dstz-freeze-row\.dstz-freeze-col[^{]*:first-child\{z-index:6/.test(css), '交叉单元格 z-index:6')
-  assert.ok(/dstz-freeze-row thead th[^{]*\{[^}]*z-index:5/.test(css), '冻结首行 z-index:5')
-  assert.ok(/dstz-freeze-col tr>\*:first-child\{position:sticky;left:-18px;z-index:4/.test(css), '冻结首列 z-index:4')
-  // 背景不透明且走主题变量（border-collapse:collapse 下 sticky 单元格边框会消失，用 box-shadow 画线）
-  assert.ok(/dstz-freeze-row[^{]*\{[^}]*background:var\(--dstz-frozen-bg\)/.test(css), '吸附单元格背景不透明')
+  assert.ok(/dstz-freeze-row\.dstz-freeze-col tr\.dstz-freeze-top-row>\*:first-child\{z-index:6/.test(css), '交叉单元格 z-index:6')
+  assert.ok(/dstz-freeze-row tr\.dstz-freeze-top-row>\*\{position:sticky;top:0;z-index:5/.test(css), '冻结首行 z-index:5')
+  // 两档底色：color-mix 的两个输入都不透明 ⇒ alpha 恒为 1；两档比例不同 ⇒ 颜色不同
+  assert.ok(css.includes('--dstz-frozen-row-bg:color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 18%,var(--dsw-specific-input-major,#fff))'),
+    '首行底色 = 主题前景色 18% 混入面板底色')
+  assert.ok(css.includes('--dstz-frozen-col-bg:color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 9%,var(--dsw-specific-input-major,#fff))'),
+    '首列底色 = 9% 混入（与首行档不同色）')
+  assert.ok(/dstz-freeze-top-row>\*\{[^}]*background:var\(--dstz-frozen-row-bg\)/.test(css), '吸附首行背景走主题变量')
+  assert.ok(/dstz-freeze-col tr>\*:first-child\{[^}]*background:var\(--dstz-frozen-col-bg\)/.test(css), '吸附首列背景走主题变量')
+  assert.ok(/dstz-freeze-row\.dstz-freeze-col tr\.dstz-freeze-top-row>\*:first-child\{z-index:6;background:var\(--dstz-frozen-row-bg\)/.test(css),
+    '交叉格取首行那一档底色，不叠第三色')
   assert.ok(!/dstz-freeze[^{]*\{[^}]*background:transparent/.test(css), '吸附单元格不得用透明背景')
-  assert.ok(css.includes('--dstz-frozen-bg:var(--dsw-specific-input-major'), '背景跟随 DSH 主题变量')
-  assert.ok(/dstz-freeze-row[^{]*\{[^}]*box-shadow:0 -8px 0 0 var\(--dstz-frozen-bg\)/.test(css), '上溢遮罩 + 下边框分隔线')
-  assert.ok(/dstz-freeze-col[^{]*\{[^}]*box-shadow:2px 0 0 -1px/.test(css), '首列右侧分隔线')
+  // box-shadow 画分隔线（border-collapse:collapse 下 sticky 单元格边框会消失）
+  assert.ok(/dstz-freeze-top-row>\*\{[^}]*box-shadow:0 -8px 0 0 var\(--dstz-frozen-row-bg\),0 4px 0 -1px var\(--dsw-alias-border-l3\)/.test(css),
+    '上溢遮罩 + 下边框分隔线（底色换档后仍然看得见）')
+  assert.ok(/dstz-freeze-col tr>\*:first-child\{[^}]*box-shadow:2px 0 0 -1px var\(--dsw-alias-border-l3\)/.test(css), '首列右侧分隔线')
   mod.closePopup()
 })
 
-ok('无 thead 的表格：开启时克隆首行吸附，关闭后克隆行移除', () => {
+ok('无 thead 的表格（真实 DOM 里 tHead === null）：标记首行、不克隆行，关闭后无残留', () => {
   mod.closePopup()
   const table = makeEl('table')
   const rows = []
@@ -666,17 +700,30 @@ ok('无 thead 的表格：开启时克隆首行吸附，关闭后克隆行移除
     table.appendChild(tr)
   }
   table.rows = rows
+  table.tHead = null // 真实 DOM 对无表头表返回 null（不是 undefined）
   mod.openPopup(table)
   const popup = documentEl.body.children.find((c) => c.className === 'dstz-popup')
   const panel = popup.children[0]
   const clone = panel.querySelector('.dstz-body .dstz-table')
   assert.ok(clone.classList.contains(mod.FREEZE_ROW_CLASS), '默认冻结首行')
-  assert.equal(clone.querySelectorAll('.' + mod.FREEZE_ROW_CLONE_CLASS).length, 1,
-    '无 thead 时首行被克隆一份用于吸附（且只克隆一次）')
-  assert.equal(clone.children.length, 4, '克隆行插在首行之前')
+  assert.equal(clone.children.length, 3, '不得再克隆出额外的一行')
+  assert.ok(clone.rows[0].classList.contains(mod.FREEZE_TOP_ROW_CLASS), '无 thead 时标记表格首行')
+  assert.equal(clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 1, '只标记一行')
   clickFreeze(panel, 'row')
-  assert.equal(clone.children.length, 3, '关闭冻结后克隆行被移除（无残留）')
-  assert.equal(clone.querySelectorAll('.' + mod.FREEZE_ROW_CLONE_CLASS).length, 0, '关闭后不再有克隆行')
+  assert.equal(clone.children.length, 3, '关闭冻结后行数不变')
+  assert.equal(clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 0, '关闭后标记被撤掉')
+  assert.equal(table.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS)).length, 0,
+    '原表格首行不得被标记')
+  mod.closePopup()
+})
+
+ok('有 thead 的表格：只标记 thead 首行，首个数据行不吸附（否则会压住表头）', () => {
+  const { clone } = openAndGet()
+  const marked = clone.rows.filter((r) => r.classList.contains(mod.FREEZE_TOP_ROW_CLASS))
+  assert.equal(marked.length, 1, '只标记一行')
+  assert.equal(marked[0], clone.rows[0], '标记的应是 thead 首行')
+  assert.ok(!clone.rows[1].classList.contains(mod.FREEZE_TOP_ROW_CLASS),
+    '首个数据行不得被标记（曾因 >tbody>tr:first-child 命中它而压住表头首格）')
   mod.closePopup()
 })
 

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>dstz 冻结首行/首列 几何与底色夹具</title>
+<style>
+  /* 夹具用的 DSH 主题变量（真实浏览器的真 DOM 解析，供 scripts/geom-probe.js 测量）。
+     与本次功能直接相关的那几个变量（--dsw-specific-input-major / --dsw-alias-label-primary
+     / --dsw-alias-border-l3）取自 dsh-client-ui-theme 的真实定义；其余是等价近似值，
+     只为让浮窗长成正常样子。html.dark 模拟深色主题（境外 var 值取自同一份主题定义）。 */
+  :root {
+    --dsw-specific-input-major: #ffffff;
+    --dsw-alias-label-primary: #0f1115;
+    --dsw-alias-label-secondary: #4b5158;
+    --dsw-alias-label-tertiary: #8a9099;
+    --dsw-alias-border-l2: #e5e7eb;
+    --dsw-alias-border-l2-darkmode-thin: #0000001f;
+    --dsw-alias-border-l3: #0000001f;
+    --dsw-alias-interactive-bg-hover: #2631480f;
+    --dsw-alias-interactive-bg-active: #2631481f;
+    --dsw-shadow-lv2: 0 8px 30px rgba(15, 17, 21, .14);
+    --dsw-font-markdown-table-head: 600 13px/20px system-ui, sans-serif;
+    --dsw-font-markdown-table: 400 13px/20px system-ui, sans-serif;
+  }
+  html.dark {
+    --dsw-specific-input-major: #2c2c2e;
+    --dsw-alias-label-primary: #f9fafb;
+    --dsw-alias-label-secondary: #b6bbc1;
+    --dsw-alias-label-tertiary: #8a9099;
+    --dsw-alias-border-l2: #3a3b3d;
+    --dsw-alias-border-l2-darkmode-thin: #ffffff29;
+    --dsw-alias-border-l3: #ffffff29;
+    --dsw-alias-interactive-bg-hover: #ffffff14;
+    --dsw-alias-interactive-bg-active: #ffffff24;
+    --dsw-shadow-lv2: 0 8px 30px rgba(0, 0, 0, .5);
+  }
+  body {
+    margin: 0;
+    background: var(--dsw-specific-input-major);
+    color: var(--dsw-alias-label-primary);
+    font-family: system-ui, sans-serif;
+  }
+  #wrap { padding: 24px; }
+  /* 聊天里原表格的近似样式（只作用于 #src 自己，浮窗里的克隆表不会命中这些选择器） */
+  #src th, #src td { border: 1px solid var(--dsw-alias-border-l2); padding: 8px 14px; min-width: 100px; }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<script>
+  // 插件按 DSH 的模块加载器契约注册；这里只把工厂的导出接住，供探针调用。
+  window.__ModuleLoader__ = { load: (options) => { window.__mod = options.factory() } }
+</script>
+<script src="client.js"></script>
+<script>
+  window.__FIXTURE_READY__ = !!(window.__mod && window.__mod.openPopup)
+  if (!window.__FIXTURE_READY__) console.error('client.js 未加载成功')
+</script>
+</body>
+</html>

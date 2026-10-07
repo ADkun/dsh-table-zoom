@@ -121,12 +121,30 @@ ok('tableToMarkdown 空表', () => {
 // --- 冻结首行/首列：样式规则必须齐备（防后续编辑误删 sticky / 层次 / 背景） ---
 ok('client.js 样式表含冻结首行/首列规则', () => {
   assert.equal(typeof mod.CSS, 'string')
-  assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-row thead th'), '缺少冻结首行规则')
+  assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-row tr.dstz-freeze-top-row>*'),
+    '缺少冻结首行规则（应认 JS 打的 dstz-freeze-top-row 标记类，不再靠 tr:first-child 猜）')
   assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-col tr>*:first-child'), '缺少冻结首列规则')
-  assert.ok(mod.CSS.includes('position:sticky;top:-14px'), '缺少竖向吸附（top 需抵消 .dstz-body 的 padding-top）')
-  assert.ok(mod.CSS.includes('position:sticky;left:-18px'), '缺少横向吸附（left 需抵消 .dstz-body 的 padding-left）')
-  assert.ok(mod.CSS.includes('top:-10px') && mod.CSS.includes('left:-12px'), '720px 断点改了 .dstz-body 内边距，需同步吸附偏移')
-  assert.ok(mod.CSS.includes('--dstz-frozen-bg:var(--dsw-specific-input-major'), '吸附背景应跟随主题变量')
+  assert.ok(mod.CSS.includes('position:sticky;top:0'), '竖向吸附应写 top:0（内边距已挪到 .dstz-inner，偏移与 padding/断点/zoom 解耦）')
+  assert.ok(mod.CSS.includes('position:sticky;left:0'), '横向吸附应写 left:0')
+  assert.ok(!/position:sticky;top:-/.test(mod.CSS) && !/position:sticky;left:-/.test(mod.CSS),
+    'sticky 偏移不得再写死负值（zoom≠1 时会错位）')
+  const bodyRule = /\.dstz-body\{([^}]*)\}/.exec(mod.CSS)
+  assert.ok(bodyRule !== null && !bodyRule[1].includes('padding'),
+    '滚动容器 .dstz-body 不得有内边距，否则吸附偏移会随 zoom 错位')
+  assert.ok(mod.CSS.includes('.dstz-inner{padding:14px 18px 18px}'), '内边距应落在内层 .dstz-inner')
+  assert.ok(mod.CSS.includes('.dstz-inner{padding:10px 12px 12px}'), '720px 断点只改 .dstz-inner 内边距')
+  assert.ok(!/width<=720px\)[^']*top:-/.test(mod.CSS), '断点里不应再补 sticky 偏移')
+  assert.ok(mod.CSS.includes('--dstz-frozen-row-bg:color-mix(in srgb,var(--dsw-alias-label-primary'),
+    '首行底色应为主题变量混合（两个输入都不透明 ⇒ alpha 恒为 1）')
+  assert.ok(mod.CSS.includes('--dstz-frozen-col-bg:color-mix(in srgb,var(--dsw-alias-label-primary'),
+    '首列底色同上')
+  assert.ok(mod.CSS.includes('--dsw-alias-label-primary,#0f1115) 18%')
+    && mod.CSS.includes('--dsw-alias-label-primary,#0f1115) 9%'),
+    '两档混合比例必须不同，否则冻结首行与首列同色')
+  assert.ok(mod.CSS.includes('background:var(--dstz-frozen-row-bg)')
+    && mod.CSS.includes('background:var(--dstz-frozen-col-bg)'), '吸附单元格背景须走这两档变量')
+  assert.ok(/dstz-freeze-row\.dstz-freeze-col tr\.dstz-freeze-top-row>\*:first-child\{z-index:6;background:var\(--dstz-frozen-row-bg\)/.test(mod.CSS),
+    '交叉格取首行那一档底色（不叠第三色），且层次最高')
 })
 ok('applyFreeze 只切换状态类（关闭后无残留）', () => {
   const cls = new Set()
@@ -142,6 +160,29 @@ ok('applyFreeze 只切换状态类（关闭后无残留）', () => {
   assert.ok(!cls.has(mod.FREEZE_ROW_CLASS) && cls.has(mod.FREEZE_COL_CLASS))
   mod.applyFreeze(table, { row: false, col: false })
   assert.equal(cls.size, 0, '两项都关闭后不应留下任何状态类')
+})
+ok('applyFreeze 标记「要吸附的那一行」（有 / 无 thead 两条路径，且关闭后无残留）', () => {
+  const mkRow = () => {
+    const s = new Set()
+    return { s, classList: { add: (c) => s.add(c), remove: (c) => s.delete(c) } }
+  }
+  const noop = { add() {}, remove() {} }
+  // 有 <thead>：只标记 thead 首行，不得碰首个数据行（否则会与表头重叠、压住表头首格）
+  const h1 = mkRow(); const h2 = mkRow(); const d1 = mkRow()
+  const withHead = { rows: [h1, h2, d1], tHead: { rows: [h1, h2] }, classList: noop }
+  mod.applyFreeze(withHead, { row: true, col: false })
+  assert.ok(h1.s.has(mod.FREEZE_TOP_ROW_CLASS), '有 thead 时应标记 thead 首行')
+  assert.ok(!h2.s.has(mod.FREEZE_TOP_ROW_CLASS) && !d1.s.has(mod.FREEZE_TOP_ROW_CLASS), '其他行不得被标记')
+  mod.applyFreeze(withHead, { row: false, col: false })
+  assert.equal(h1.s.size, 0, '关闭后标记应被撤掉')
+  // 无 <thead>：真实 DOM 里 table.tHead === null（不是 undefined），此时标记表格首行
+  const r0 = mkRow(); const r1 = mkRow()
+  const noHead = { rows: [r0, r1], tHead: null, classList: noop }
+  mod.applyFreeze(noHead, { row: true, col: false })
+  assert.ok(r0.s.has(mod.FREEZE_TOP_ROW_CLASS), '无 thead 时应标记表格首行')
+  assert.ok(!r1.s.has(mod.FREEZE_TOP_ROW_CLASS))
+  mod.applyFreeze(noHead, { row: false, col: false })
+  assert.equal(r0.s.size, 0, '无 thead 的表关闭后也不得残留标记')
 })
 
 // --- rc2 兼容：client.js 样式数组必须含宽表覆盖规则（防后续编辑误删） ---
