@@ -15,7 +15,7 @@
  *   ⑦ 两个冻结按钮都关掉后：背景回原样、无残留标记、行数不变、聊天原表格不受影响
  *
  * 工具链不在本机时打 SKIP 并退 0（不假装验证过）；判据不过退 1。
- * 选项：--keep 保留夹具目录（默认跑完删掉）。
+ * 选项：--keep 保留夹具目录（默认跑完删掉）；--dump 打印探针原始读数（排查用）。
  */
 import { copyFileSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
