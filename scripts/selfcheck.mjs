@@ -118,6 +118,31 @@ ok('tableToMarkdown 空表', () => {
   assert.equal(mod.tableToMarkdown(null), '')
 })
 
+// --- 冻结首行/首列：样式规则必须齐备（防后续编辑误删 sticky / 层次 / 背景） ---
+ok('client.js 样式表含冻结首行/首列规则', () => {
+  assert.equal(typeof mod.CSS, 'string')
+  assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-row thead th'), '缺少冻结首行规则')
+  assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-col tr>*:first-child'), '缺少冻结首列规则')
+  assert.ok(mod.CSS.includes('position:sticky;top:0'), '缺少竖向吸附')
+  assert.ok(mod.CSS.includes('position:sticky;left:0'), '缺少横向吸附')
+  assert.ok(mod.CSS.includes('--dstz-frozen-bg:var(--dsw-specific-input-major'), '吸附背景应跟随主题变量')
+})
+ok('applyFreeze 只切换状态类（关闭后无残留）', () => {
+  const cls = new Set()
+  const table = {
+    classList: {
+      add: (c) => cls.add(c),
+      remove: (c) => cls.delete(c),
+    },
+  }
+  mod.applyFreeze(table, { row: true, col: true })
+  assert.ok(cls.has(mod.FREEZE_ROW_CLASS) && cls.has(mod.FREEZE_COL_CLASS))
+  mod.applyFreeze(table, { row: false, col: true })
+  assert.ok(!cls.has(mod.FREEZE_ROW_CLASS) && cls.has(mod.FREEZE_COL_CLASS))
+  mod.applyFreeze(table, { row: false, col: false })
+  assert.equal(cls.size, 0, '两项都关闭后不应留下任何状态类')
+})
+
 // --- rc2 兼容：client.js 样式数组必须含宽表覆盖规则（防后续编辑误删） ---
 ok('client.js 样式数组含 rc2 宽表覆盖规则', () => {
   assert.ok(
