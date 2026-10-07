@@ -32,7 +32,7 @@
 - z-index 层次不变：冻结首列 4 < 冻结首行 5 < 交叉单元格 6；冻结层仍刻意不越过
   右下角改尺寸手柄。
 - 测试：`scripts/selfcheck.mjs` 与 `scripts/smoke-client.mjs` 同步到新结构，
-  共 selfcheck 15 项 + 冒烟 20 项（其中新增：标记「要吸附的那一行」的有/无
+  共 selfcheck 16 项 + 冒烟 20 项（其中新增：标记「要吸附的那一行」的有/无
   `<thead>` 两条路径、有 `<thead>` 时首个数据行不吸附、两档底色与偏移 0 的
   样式断言、关闭后无残留）。**新增真实浏览器回归** `npm run smoke:geom`
   （`scripts/geom-fixture.html` + `geom-probe.js` + `geom-check.mjs`，无头浏览器
