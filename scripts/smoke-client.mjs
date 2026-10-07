@@ -639,12 +639,12 @@ ok('两项都关闭后无残留：无冻结类、无内联样式、无额外节�
 ok('冻结样式规则齐备：两向 sticky、层次 z-index、不透明主题背景、box-shadow 分隔线', () => {
   const css = mod.CSS
   // 两个方向都吸附
-  assert.ok(/\.dstz-freeze-row[^{]*\{[^}]*position:sticky;top:0/.test(css), '首行 sticky top:0')
-  assert.ok(/\.dstz-freeze-col[^{]*\{[^}]*position:sticky;left:0/.test(css), '首列 sticky left:0')
+  assert.ok(/\.dstz-freeze-row[^{]*\{[^}]*position:sticky;top:-14px/.test(css), '首行 sticky top:-14px（抵消正文 padding-top）')
+  assert.ok(/\.dstz-freeze-col[^{]*\{[^}]*position:sticky;left:-18px/.test(css), '首列 sticky left:-18px（抵消正文 padding-left）')
   // 交叉单元格层次最高
   assert.ok(/dstz-freeze-row\.dstz-freeze-col[^{]*:first-child\{z-index:6/.test(css), '交叉单元格 z-index:6')
   assert.ok(/dstz-freeze-row thead th[^{]*\{[^}]*z-index:5/.test(css), '冻结首行 z-index:5')
-  assert.ok(/dstz-freeze-col tr>\*:first-child\{position:sticky;left:0;z-index:4/.test(css), '冻结首列 z-index:4')
+  assert.ok(/dstz-freeze-col tr>\*:first-child\{position:sticky;left:-18px;z-index:4/.test(css), '冻结首列 z-index:4')
   // 背景不透明且走主题变量（border-collapse:collapse 下 sticky 单元格边框会消失，用 box-shadow 画线）
   assert.ok(/dstz-freeze-row[^{]*\{[^}]*background:var\(--dstz-frozen-bg\)/.test(css), '吸附单元格背景不透明')
   assert.ok(!/dstz-freeze[^{]*\{[^}]*background:transparent/.test(css), '吸附单元格不得用透明背景')

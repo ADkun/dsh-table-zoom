@@ -123,8 +123,9 @@ ok('client.js 样式表含冻结首行/首列规则', () => {
   assert.equal(typeof mod.CSS, 'string')
   assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-row thead th'), '缺少冻结首行规则')
   assert.ok(mod.CSS.includes('.dstz-table.dstz-freeze-col tr>*:first-child'), '缺少冻结首列规则')
-  assert.ok(mod.CSS.includes('position:sticky;top:0'), '缺少竖向吸附')
-  assert.ok(mod.CSS.includes('position:sticky;left:0'), '缺少横向吸附')
+  assert.ok(mod.CSS.includes('position:sticky;top:-14px'), '缺少竖向吸附（top 需抵消 .dstz-body 的 padding-top）')
+  assert.ok(mod.CSS.includes('position:sticky;left:-18px'), '缺少横向吸附（left 需抵消 .dstz-body 的 padding-left）')
+  assert.ok(mod.CSS.includes('top:-10px') && mod.CSS.includes('left:-12px'), '720px 断点改了 .dstz-body 内边距，需同步吸附偏移')
   assert.ok(mod.CSS.includes('--dstz-frozen-bg:var(--dsw-specific-input-major'), '吸附背景应跟随主题变量')
 })
 ok('applyFreeze 只切换状态类（关闭后无残留）', () => {
