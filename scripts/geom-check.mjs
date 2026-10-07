@@ -152,13 +152,26 @@ check('滚动容器 .dstz-body 自身 padding 为 0（sticky 偏移才能写 0�
 
 const V = probe.vertical ?? []
 const H = probe.horizontal ?? []
-// 未滚动时观察到的偏移就是自然位置（= .dstz-inner 的内边距），由读数本身推出，不写死
+// 期望内边距**锚在独立来源**：写死常数（与 lib/client.js 的 `.dstz-inner{padding:14px 18px 18px}`
+// 一致），并另外直接读 .dstz-inner 的 computed padding，断言实测值就等于这两个常数；再从样本
+// 反推一次做交叉核对。此前期望值是「从第一条样本自身读数反推」的，定向突变把偏移与内边距一起
+// 写歪时期望会跟着漂（第三方突变测试指出的残余弱点）。
+const PAD_TOP = 14
+const PAD_LEFT = 18
+const padTop = PAD_TOP
+const padLeft = PAD_LEFT
+const padTopFromSample = V.length ? Math.round((V[0].headTop - V[0].edgeTop) * 100) / 100 : NaN
+const padLeftFromSample = H.length ? Math.round((H[0].cornerLeft - H[0].edgeLeft) * 100) / 100 : NaN
 check('取样起点是未滚动位置（req=0）', V[0]?.req === 0 && V[0]?.got === 0 && H[0]?.req === 0 && H[0]?.got === 0,
   `V0=${JSON.stringify(V[0] ? { req: V[0].req, got: V[0].got } : null)} H0=${JSON.stringify(H[0] ? { req: H[0].req, got: H[0].got } : null)}`)
-const padTop = V.length ? Math.round((V[0].headTop - V[0].edgeTop) * 100) / 100 : NaN
-const padLeft = H.length ? Math.round((H[0].cornerLeft - H[0].edgeLeft) * 100) / 100 : NaN
+check('.dstz-inner 实测内边距 == 判据里的期望常数（期望值不从样本反推，独立锚点）',
+  edge.innerPadTop === PAD_TOP && edge.innerPadLeft === PAD_LEFT,
+  `innerPadTop=${edge.innerPadTop} innerPadLeft=${edge.innerPadLeft} 期望=${PAD_TOP}/${PAD_LEFT}`)
+check('未滚动位置的样本读数与期望常数一致（两条独立来源对上，谁被单独写歪都会失败）',
+  Math.abs(padTopFromSample - PAD_TOP) <= 0.5 && Math.abs(padLeftFromSample - PAD_LEFT) <= 0.5,
+  `样本反推 top=${padTopFromSample} left=${padLeftFromSample}，常数 ${PAD_TOP}/${PAD_LEFT}`)
 notes.push(`  夹具 ${fx.rows} 行 × ${fx.cols} 列；正文 ${edge.rect?.w}×${edge.rect?.h}（top=${edge.edgeTop} left=${edge.edgeLeft}）；`
-  + `可滚 scrollTop ${sc.maxScrollTop} / scrollLeft ${sc.maxScrollLeft}；内边距 top=${padTop} left=${padLeft}`)
+  + `可滚 scrollTop ${sc.maxScrollTop} / scrollLeft ${sc.maxScrollLeft}；内边距常数 top=${padTop} left=${padLeft}（样本反推 ${padTopFromSample}/${padLeftFromSample}）`)
 
 const near = (a, b, tol = 0.5) => typeof a === 'number' && Math.abs(a - b) <= tol
 /** 期望偏移：滚动量还没吃掉内边距时停在自然位置，之后必须贴边（0）。 */
@@ -375,6 +388,33 @@ notes.push(`  结构语义：nohead 标记 ${sNohead.markedRows} 行（按钮 ${
   + ` emptyhead 标记 ${sEmpty.markedRows} 行（按钮 ${sEmpty.rowBtnDisabled ? '禁用' : '可用'}）|`
   + ` emptyheadrow 标记 ${sEmptyRow.markedRows} 行（按钮 ${sEmptyRow.rowBtnDisabled ? '禁用' : '可用'}）|`
   + ` tfoot 表头 ${sFoot.headFirstPosition} / 表尾 ${sFoot.footFirstPosition}`)
+
+// ── 12.5) 窄面板：头部不溢出、面板自身不滚动（复核方 226px 错位的根因回归） ──
+const nf = probe.narrowFit ?? {}
+check('窄面板（宽度被下限 320 兜住）时头部不横向溢出，并收起冻结按钮文字只留图标',
+  nf.panelWidth === 320 && typeof nf.headerScrollWidth === 'number'
+  && nf.headerScrollWidth <= nf.headerClientWidth + 1 && nf.narrowClass === true && nf.labelDisplay === 'none',
+  JSON.stringify(nf))
+check('窄面板时面板自身不滚动、子元素与面板左边缘对齐（根因：closeBtn.focus() 把 overflow:hidden 的面板滚到 49px）',
+  nf.panelScrollLeft === 0 && nf.panelScrollTop === 0 && nf.panelScrollWidth <= nf.panelClientWidth + 1
+  && Math.abs(nf.headerLeft - (nf.panelLeft + 1)) <= 0.5,
+  JSON.stringify({ panelLeft: nf.panelLeft, headerLeft: nf.headerLeft, panelScrollLeft: nf.panelScrollLeft,
+    panelScrollWidth: nf.panelScrollWidth, panelClientWidth: nf.panelClientWidth, headerScrollWidth: nf.headerScrollWidth,
+    headerClientWidth: nf.headerClientWidth, narrowClass: nf.narrowClass, labelDisplay: nf.labelDisplay }))
+
+// ── 12.6) 宽度预算：表宽 + 38 + 正文纵向滚动条，内层容得下整表、左右内边距对称 ──
+const fb2 = probe.fitBudget ?? {}
+check('面板宽度预算把正文纵向滚动条算进去（否则表格会挤进右侧内边距：实测左 18px / 右 8px）',
+  fb2.scrollbarY > 0 && Math.abs(fb2.budget - (38 + fb2.scrollbarY)) <= 1,
+  JSON.stringify({ tableW: fb2.tableW, panelW: fb2.panelW, budget: fb2.budget, scrollbarY: fb2.scrollbarY }))
+check('内层内容盒容得下整表，表格左右内边距对称且没有无谓的横向滚动条',
+  fb2.innerContentW >= fb2.tableW - 0.5 && Math.abs(fb2.rightPadEffective - fb2.innerPadRight) <= 1.5
+  && Math.abs(fb2.leftPadEffective - fb2.innerPadLeft) <= 1.5 && fb2.maxScrollLeft === 0,
+  JSON.stringify(fb2))
+notes.push(`  窄面板：panel ${nf.panelWidth}px（左 ${nf.panelLeft}）header 左 ${nf.headerLeft} 溢出 ${nf.headerScrollWidth}/${nf.headerClientWidth}`
+  + ` 面板scrollLeft=${nf.panelScrollLeft} dstz-narrow=${nf.narrowClass} 按钮文字=${nf.labelDisplay}`)
+notes.push(`  宽度预算：表 ${fb2.tableW} + 38 + 滚动条 ${fb2.scrollbarY} = 面板 ${fb2.panelW}（实际差 ${fb2.budget}）；`
+  + `内层内容 ${fb2.innerContentW}，左右内边距实测 ${fb2.leftPadEffective}/${fb2.rightPadEffective}（声明 ${fb2.innerPadLeft}/${fb2.innerPadRight}），横向滚动条 ${fb2.maxScrollLeft}`)
 
 // ── 13) 打印读数 ──────────────────────────────────────────────────────────
 console.log('[dsh-plugin-table-zoom] smoke:geom（真实浏览器，无头）')

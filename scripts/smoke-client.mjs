@@ -529,6 +529,36 @@ ok('applyAdaptiveWidth 按表格自然宽度自适应（窄表收缩、宽表铺
   clone.offsetWidth = 0
   mod.applyAdaptiveWidth(panel, clone)
   assert.equal(panel.style.width, '320px')
+  // 正文有纵向滚动条时（长表必然如此）把滚动条宽度补进预算，否则表格会挤进右侧内边距
+  const body = makeEl('div')
+  body.offsetWidth = 636
+  body.clientWidth = 626
+  clone.offsetWidth = 600
+  mod.applyAdaptiveWidth(panel, clone, body)
+  assert.equal(panel.style.width, '648px')
+  body.offsetWidth = 600
+  body.clientWidth = 600
+  mod.applyAdaptiveWidth(panel, clone, body)
+  assert.equal(panel.style.width, '638px', '没有滚动条时预算只有内边距 36 + 边框 2')
+})
+
+ok('fitHeader：头部溢出就收起按钮文字，并把面板自身滚动偏移归零', () => {
+  assert.equal(typeof mod.fitHeader, 'function', 'fitHeader 应导出（便于断言）')
+  const panel = makeEl('div')
+  const header = makeEl('div')
+  panel.querySelector = () => header
+  header.scrollWidth = 400
+  header.clientWidth = 318
+  panel.scrollLeft = 49
+  panel.scrollTop = 7
+  mod.fitHeader(panel)
+  assert.equal(panel.classList.contains('dstz-narrow'), true, '溢出时加 dstz-narrow 收起按钮文字')
+  assert.equal(panel.scrollLeft, 0, '面板自身不得停留在滚动位置（否则头部/正文整体左移）')
+  assert.equal(panel.scrollTop, 0)
+  // 头部放得下就摘掉 dstz-narrow（拖宽回去要恢复按钮文字）
+  header.scrollWidth = 300
+  mod.fitHeader(panel)
+  assert.equal(panel.classList.contains('dstz-narrow'), false)
 })
 
 // 6) 冻结首行 / 冻结首列（默认开启、可独立切换、关闭后无残留）

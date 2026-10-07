@@ -150,6 +150,10 @@ ok('client.js 样式表含冻结首行/首列规则', () => {
   assert.ok(mod.CSS.includes('.dstz-inner{padding:14px 18px 18px}'), '内边距应落在内层 .dstz-inner')
   assert.ok(mod.CSS.includes('.dstz-inner{padding:10px 12px 12px}'), '720px 断点只改 .dstz-inner 内边距')
   assert.ok(!/width<=720px\)[^']*top:-/.test(mod.CSS), '断点里不应再补 sticky 偏移')
+  assert.ok(mod.CSS.includes('@media (width<=560px){.dstz-freezeBtn span{display:none}}'),
+    '视口窄（媒体查询）时收起冻结按钮文字')
+  assert.ok(mod.CSS.includes('.dstz-panel.dstz-narrow .dstz-freezeBtn span{display:none}'),
+    '面板自身窄时也要收起：头部横向溢出会把 overflow:hidden 的面板变成滚动容器，聚焦关闭按钮即整条头部与正文左移')
   assert.ok(mod.CSS.includes('--dstz-frozen-row-bg:color-mix(in srgb,var(--dsw-alias-label-primary'),
     '首行底色应为主题变量混合（两个输入都不透明 ⇒ alpha 恒为 1）')
   assert.ok(mod.CSS.includes('--dstz-frozen-col-bg:color-mix(in srgb,var(--dsw-alias-label-primary'),
@@ -236,6 +240,30 @@ ok('client.js 样式数组含 rc2 宽表覆盖规则', () => {
     code.includes('[class*="tableScroll"].md-table-wide{box-sizing:border-box'),
     'missing rc2 md-table-wide override rule in injected CSS',
   )
+})
+
+// --- 面板护栏：fitHeader（复核方 226px 错位整改） ---
+ok('fitHeader：头部溢出时加 dstz-narrow 并把面板自身滚动偏移归零', () => {
+  assert.equal(typeof mod.fitHeader, 'function', 'fitHeader 应导出（便于断言）')
+  const header = { scrollWidth: 400, clientWidth: 318 }
+  const panel = {
+    s: new Set(),
+    querySelector: () => header,
+    scrollLeft: 49,
+    scrollTop: 7,
+  }
+  panel.classList = {
+    add: (c) => panel.s.add(c),
+    remove: (c) => panel.s.delete(c),
+    contains: (c) => panel.s.has(c),
+  }
+  mod.fitHeader(panel)
+  assert.equal(panel.s.has('dstz-narrow'), true, '头部溢出时应收起冻结按钮文字')
+  assert.equal(panel.scrollLeft, 0, '面板自身不得留在滚动位置（否则头部与正文整体左移）')
+  assert.equal(panel.scrollTop, 0, '纵向偏移同样归零')
+  header.scrollWidth = 300
+  mod.fitHeader(panel)
+  assert.equal(panel.s.has('dstz-narrow'), false, '头部放得下要摘掉 dstz-narrow（拖宽后按钮文字回来）')
 })
 
 console.log(`[dsh-plugin-table-zoom] selfcheck: ${passed} passed`)

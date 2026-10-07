@@ -46,12 +46,17 @@
   const dataRow = (i) => clone.querySelectorAll('tbody > tr')[i]
   const plainCell = (i) => { const r = dataRow(i); return r ? (r.children[2] || r.children[1]) : null }
   const firstColCell = (i) => { const r = dataRow(i); return r ? r.children[0] : null }
+  /** .dstz-inner（正文包裹层）：吸附的「自然位置」由它的内边距决定。 */
+  const innerEl = () => body.querySelector('.dstz-inner')
   /** 滚动容器自身的物理边缘（吸附边必须贴在这里；padding/border 另有独立断言）。 */
   const edge = () => {
     const r = rectOf(body)
     return {
       rect: r,
       padTop: px(cs(body).paddingTop), padLeft: px(cs(body).paddingLeft),
+      innerPadTop: innerEl() ? px(cs(innerEl()).paddingTop) : null,
+      innerPadLeft: innerEl() ? px(cs(innerEl()).paddingLeft) : null,
+      innerPadRight: innerEl() ? px(cs(innerEl()).paddingRight) : null,
       borderTop: px(cs(body).borderTopWidth), borderLeft: px(cs(body).borderLeftWidth),
       edgeTop: R(r.top + px(cs(body).borderTopWidth) + px(cs(body).paddingTop)),
       edgeLeft: R(r.left + px(cs(body).borderLeftWidth) + px(cs(body).paddingLeft)),
@@ -477,6 +482,51 @@
       emptyheadrow: readStruct('emptyheadrow'),
       tfoot: readStruct('tfoot'),
     }
+    // ⑭ 窄面板：头部不溢出、面板自身不滚动、子元素与面板左边缘对齐
+    //    （复核方实测「面板 rect 与 header/body 错开 226px」的根因回归：头部溢出 →
+    //     overflow:hidden 的面板成为可滚动容器 → closeBtn.focus() 触发「滚动到可见」）
+    out.narrowFit = (() => {
+      mod.closePopup()
+      mod.openPopup(fx.build('normal', 30, 2))
+      const p = q('.dstz-panel'); const h = q('.dstz-header'); const act = q('.dstz-headerActions')
+      const span = p ? p.querySelector('.dstz-freezeBtn span') : null
+      const pr = rectOf(p), hr = rectOf(h)
+      const res = {
+        tableW: R(rectOf(q('.dstz-table')).w),
+        panelLeft: R(pr.left), panelWidth: R(pr.w), headerLeft: R(hr.left), headerWidth: R(hr.w),
+        panelScrollLeft: p ? p.scrollLeft : null, panelScrollTop: p ? p.scrollTop : null,
+        panelScrollWidth: p ? p.scrollWidth : null, panelClientWidth: p ? p.clientWidth : null,
+        headerScrollWidth: h ? h.scrollWidth : null, headerClientWidth: h ? h.clientWidth : null,
+        actionsScrollWidth: act ? act.scrollWidth : null,
+        narrowClass: p ? p.classList.contains('dstz-narrow') : null,
+        labelDisplay: span ? cs(span).display : null,
+        activeElement: document.activeElement ? String(document.activeElement.className) : null,
+      }
+      mod.closePopup()
+      return res
+    })()
+
+    // ⑮ 宽度预算：面板宽 = 表宽 + 38 + 正文纵向滚动条；内层容得下整表、左右内边距对称
+    out.fitBudget = (() => {
+      mod.closePopup()
+      mod.openPopup(fx.build('normal', 60, 6))
+      const p = q('.dstz-panel'); const b = q('.dstz-body'); const i = q('.dstz-inner'); const c = q('.dstz-table')
+      const pr = rectOf(p), ir = rectOf(i), cr = rectOf(c)
+      const padL = px(cs(i).paddingLeft), padR = px(cs(i).paddingRight)
+      const res = {
+        tableW: R(cr.w), panelW: R(pr.w), panelLeft: R(pr.left),
+        bodyOffsetWidth: b.offsetWidth, bodyClientWidth: b.clientWidth, scrollbarY: b.offsetWidth - b.clientWidth,
+        innerOffsetWidth: i.offsetWidth, innerClientWidth: i.clientWidth,
+        innerPadLeft: padL, innerPadRight: padR, innerContentW: R(i.clientWidth - padL - padR),
+        leftPadEffective: R(cr.left - ir.left),
+        rightPadEffective: R((ir.left + i.clientWidth) - cr.right),
+        maxScrollLeft: b.scrollWidth - b.clientWidth,
+        budget: R(pr.w - cr.w),
+      }
+      mod.closePopup()
+      return res
+    })()
+
     // 还原主夹具表，避免后续（driver 可能再跑一次）看到被换掉的表
     window.__fixtureTable = fx.build('normal')
   }
